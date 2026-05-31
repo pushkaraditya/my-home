@@ -265,8 +265,13 @@ const sceneEl = document.getElementById('scene');
 const W = ()=>window.innerWidth, Hh = ()=>window.innerHeight;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0e13);
-scene.fog = new THREE.Fog(0x0b0e13, 38, 80);
+// soft vertical gradient sky for a nicer backdrop
+(function(){ const c=document.createElement('canvas'); c.width=2; c.height=256;
+  const ctx=c.getContext('2d'), g=ctx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'#26313f'); g.addColorStop(.45,'#171f2a'); g.addColorStop(1,'#0b0e13');
+  ctx.fillStyle=g; ctx.fillRect(0,0,2,256);
+  const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; scene.background=t; })();
+scene.fog = new THREE.Fog(0x141b25, 42, 90);
 
 const camera = new THREE.PerspectiveCamera(48, W()/Hh(), 0.1, 500);
 const HOME_CAM = new THREE.Vector3(13, 15, 19);
@@ -276,6 +281,9 @@ const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(W(),Hh());
 renderer.shadowMap.enabled = false;          // shadows disabled
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
 sceneEl.appendChild(renderer.domElement);
 
 const labelRenderer = new THREE.CSS2DRenderer();
@@ -296,6 +304,7 @@ const amb = new THREE.AmbientLight(0xffffff, .35); scene.add(amb);
 const sun = new THREE.DirectionalLight(0xfff0d8, 1.0);
 sun.position.set(14,22,8); sun.castShadow=false;
 scene.add(sun);
+const fill = new THREE.DirectionalLight(0xbcd0ff, .35); fill.position.set(-13,9,-9); scene.add(fill);
 
 // ---------- ground + grid ----------
 const ground = new THREE.Mesh(
@@ -347,7 +356,7 @@ ROOMS.forEach(r=>{
   // floor slab
   const floorMat = new THREE.MeshStandardMaterial({
     color: r.tbd ? 0xe3a648 : r.color,
-    roughness:.92, metalness:0,
+    roughness:.72, metalness:.04,
     transparent: !!r.tbd, opacity: r.tbd ? .42 : 1 });
   const floor = new THREE.Mesh(new THREE.BoxGeometry(fw, 0.04, fd), floorMat);
   floor.position.set(fx, 0.0, fz); floor.receiveShadow=true; scene.add(floor);
@@ -462,6 +471,46 @@ const BWALL_H = 6*30.48;   // 182.88 cm
 const byMat = new THREE.MeshStandardMaterial({color:0x6f7a5e, roughness:.95, metalness:0});
 addWallBox('WE', 0, 0, 420, 0, BWALL_H, byMat);   // west boundary  (x=0, z 0..420)
 addWallBox('NS', 0, 0, 260, 0, BWALL_H, byMat);   // north boundary (z=0, x 0..260)
+
+// ---------- master-bathroom fixtures (BG: x 1070-1280, z 300-500) ----------
+(function buildMasterBath(){
+  const cer  = new THREE.MeshStandardMaterial({color:0xf3f2ee, roughness:.35, metalness:.02});
+  const chr  = new THREE.MeshStandardMaterial({color:0xd2d8df, roughness:.18, metalness:.9});
+  const gls  = new THREE.MeshStandardMaterial({color:0xcfe6ea, roughness:.06, metalness:0, transparent:true, opacity:.22});
+  const tray = new THREE.MeshStandardMaterial({color:0x2a2d31, roughness:.5,  metalness:.1});
+  const stone= new THREE.MeshStandardMaterial({color:0x3a3e44, roughness:.55, metalness:.06});
+  const wood = new THREE.MeshStandardMaterial({color:0x6b5440, roughness:.6,  metalness:.03});
+  const mir  = new THREE.MeshStandardMaterial({color:0x9fb2c0, roughness:.06, metalness:.85});
+  const fix=(xcm,yC,zcm,w,h,d,mat)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    m.position.set(wx(xcm),yC,wz(zcm)); scene.add(m); };
+  const cyl=(xcm,yC,zcm,r,h,mat)=>{ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,24),mat);
+    m.position.set(wx(xcm),yC,wz(zcm)); scene.add(m); };
+
+  // wall-hung toilet on the NORTH wall (z=300), east of the entry door
+  fix(1235,0.40,328,0.37,0.34,0.55,cer);     // bowl
+  fix(1235,0.585,323,0.40,0.045,0.50,cer);   // seat + lid
+  fix(1235,1.05,303,0.20,0.24,0.03,chr);     // flush plate on wall
+  colliders.push({x0:1216,x1:1254,z0:300,z1:356});
+
+  // corner shower (bathing area) on the EAST + SOUTH walls (SE corner)
+  fix(1235,0.03,455,0.90,0.06,0.90,tray);    // shower tray
+  fix(1235,1.0,410,0.90,2.0,0.012,gls);      // glass panel (north side)
+  fix(1190,1.0,455,0.012,2.0,0.90,gls);      // glass panel (west side)
+  fix(1235,2.0,410,0.92,0.03,0.03,chr);      // chrome top rail
+  fix(1190,2.0,455,0.03,0.03,0.92,chr);
+  fix(1276,1.05,455,0.05,1.8,0.26,cer);      // shower panel on east wall
+  cyl(1255,1.92,455,0.10,0.04,chr);          // rain shower head
+  colliders.push({x0:1190,x1:1280,z0:410,z1:500});
+
+  // table-top wash basin on the SOUTH wall (z=500), west portion
+  fix(1110,0.45,476,0.62,0.70,0.48,wood);    // vanity cabinet
+  fix(1110,0.835,476,0.66,0.05,0.50,stone);  // counter top
+  cyl(1110,0.925,474,0.17,0.13,cer);         // vessel basin
+  cyl(1110,1.00,492,0.02,0.30,chr);          // faucet stem
+  fix(1110,1.13,484,0.03,0.03,0.16,chr);     // faucet spout
+  fix(1110,1.50,499,0.62,0.72,0.02,mir);     // mirror
+  colliders.push({x0:1079,x1:1141,z0:452,z1:500});
+})();
 
 // direction markers — positioned in world space so they track the model as it rotates.
 // Plan top (low z) = North, bottom (high z) = South, right (high x) = East.
