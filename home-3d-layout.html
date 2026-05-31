@@ -100,6 +100,9 @@
   #roLine2 b{color:var(--amber);font-weight:700}
   #roLine3{margin-top:2px;font-size:11px;color:var(--muted);letter-spacing:.03em}
   #roLine3 b{color:var(--ink);font-weight:700}
+  #miniMap{display:none;width:124px;height:88px;margin-top:8px;border:1px solid var(--line);
+    border-radius:8px;background:rgba(10,14,20,.55)}
+  body.walking #miniMap{display:block}
   #roNote{margin-top:8px;font-size:8.5px;color:var(--muted);letter-spacing:.04em;line-height:1.5;
     border-top:1px dashed var(--line);padding-top:6px}
   @media (max-width:560px){#readout{top:auto;bottom:84px;right:12px;min-width:0}}
@@ -126,7 +129,7 @@
       <button id="btnLabels" class="on">A Labels: on</button>
     </div>
     <div class="row">
-      <button id="btnRoof" class="on">▤ Roof: on</button>
+      <button id="btnRoof">▤ Roof: off</button>
       <button id="btnWalk">🚶 Walk</button>
     </div>
     <div class="row">
@@ -156,6 +159,7 @@
       <div id="roLine1">move the mouse over the plan</div>
       <div id="roLine2"></div>
       <div id="roLine3"></div>
+      <canvas id="miniMap"></canvas>
       <div id="roNote">0,0 = NW (top-left) corner · +x → East · +z → South · units: feet</div>
     </div>
   </div>
@@ -421,6 +425,12 @@ ROOMS.forEach(r=>{ if(r.tbd||r.outdoor) return;
   roofGroup.add(slab);
 });
 
+// ---------- backyard boundary (compound) wall — west + north sides, 6 ft tall ----------
+const BWALL_H = 6*30.48;   // 182.88 cm
+const byMat = new THREE.MeshStandardMaterial({color:0x6f7a5e, roughness:.95, metalness:0});
+addWallBox('WE', 0, 0, 420, 0, BWALL_H, byMat);   // west boundary  (x=0, z 0..420)
+addWallBox('NS', 0, 0, 260, 0, BWALL_H, byMat);   // north boundary (z=0, x 0..260)
+
 // direction markers — positioned in world space so they track the model as it rotates.
 // Plan top (low z) = North, bottom (high z) = South, right (high x) = East.
 function dirLabel(txt, xcm, zcm){
@@ -464,6 +474,31 @@ renderer.domElement.addEventListener('pointermove', e=>{
   }
 });
 
+// ---------- walk-mode minimap ----------
+const mm=document.getElementById('miniMap'), mmx=mm.getContext('2d');
+const MW=124, MH=88; mm.width=MW; mm.height=MH;
+const mpad=7, mspanX=maxX-minX, mspanZ=maxZ-minZ;
+const msc=Math.min((MW-2*mpad)/mspanX, (MH-2*mpad)/mspanZ);
+const mOffX=(MW-mspanX*msc)/2, mOffY=(MH-mspanZ*msc)/2;
+const mapX=px=> mOffX+(px-minX)*msc, mapY=pz=> mOffY+(pz-minZ)*msc;
+function drawMini(px,pz,bearing){
+  mmx.clearRect(0,0,MW,MH);
+  ROOMS.forEach(r=>{ if(r.tbd) return;
+    mmx.fillStyle = r.outdoor ? 'rgba(136,163,106,.45)' : 'rgba(120,132,156,.22)';
+    mmx.fillRect(mapX(r.x), mapY(r.z), r.w*msc, r.d*msc);
+    mmx.strokeStyle='rgba(190,200,216,.45)'; mmx.lineWidth=0.8;
+    mmx.strokeRect(mapX(r.x), mapY(r.z), r.w*msc, r.d*msc);
+  });
+  const X=mapX(px), Y=mapY(pz), br=bearing*Math.PI/180;
+  const dx=Math.sin(br), dy=-Math.cos(br), pxp=-dy, pyp=dx;
+  mmx.fillStyle='#e3a648'; mmx.strokeStyle='#16100a'; mmx.lineWidth=0.8;
+  mmx.beginPath();
+  mmx.moveTo(X+dx*7, Y+dy*7);
+  mmx.lineTo(X-dx*3+pxp*4.2, Y-dy*3+pyp*4.2);
+  mmx.lineTo(X-dx*3-pxp*4.2, Y-dy*3-pyp*4.2);
+  mmx.closePath(); mmx.fill(); mmx.stroke();
+}
+
 // ---------- UI ----------
 let wallsSolid=true, labelsOn=true;
 const $=id=>document.getElementById(id);
@@ -482,7 +517,7 @@ $('btnCollapse').onclick=()=>{ const p=$('panel'); p.classList.toggle('collapsed
 $('btnRoCollapse').onclick=()=>{ const r=$('readout'); r.classList.toggle('collapsed');
   $('btnRoCollapse').textContent = r.classList.contains('collapsed')?'▸':'▾'; };
 
-let roofOn=true;
+let roofOn=false; roofGroup.visible=false;
 $('btnRoof').onclick=()=>{ roofOn=!roofOn; roofGroup.visible=roofOn;
   $('btnRoof').classList.toggle('on',roofOn);
   $('btnRoof').textContent=roofOn?'▤ Roof: on':'▤ Roof: off'; };
@@ -595,6 +630,7 @@ function walkStep(){
   document.getElementById('roLine1').innerHTML=`x <b>${ft1(xcm)}</b>  z <b>${ft1(zcm)}</b> <span style="color:var(--muted)">ft</span>`;
   document.getElementById('roLine2').innerHTML= rm ? `in <b>${rm}</b>` : 'in <b>open space</b>';
   document.getElementById('roLine3').innerHTML=`facing <b>${card}</b> · ahead <b>${ahead}</b>`;
+  drawMini(xcm, zcm, bearing);
 }
 
 // ---------- loop ----------
