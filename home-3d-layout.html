@@ -63,7 +63,12 @@
   .compass .arrow{position:absolute;top:5px;left:50%;transform:translateX(-50%);
     width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
     border-bottom:9px solid var(--amber)}
-  @media (max-width:560px){#panel{width:calc(100% - 36px)}}
+  @media (max-width:600px){
+    #panel{width:196px;top:12px;left:12px;padding:13px 12px 11px}
+    #panel h1{font-size:17px}
+    button{font-size:12px;padding:12px 6px}
+    #btnCollapse{width:28px;height:28px}
+  }
 
   /* first-person walk mode */
   #crosshair{position:absolute;top:50%;left:50%;width:8px;height:8px;margin:-4px 0 0 -4px;
@@ -105,7 +110,24 @@
   body.walking #miniMap{display:block}
   #roNote{margin-top:8px;font-size:8.5px;color:var(--muted);letter-spacing:.04em;line-height:1.5;
     border-top:1px dashed var(--line);padding-top:6px}
-  @media (max-width:560px){#readout{top:auto;bottom:84px;right:12px;min-width:0}}
+  @media (max-width:600px){
+    #readout{top:12px;right:12px;width:140px;padding:9px 10px}
+    #roLine1{font-size:14px}
+    #miniMap{width:118px;height:82px}
+    #walkHud{font-size:10px;padding:7px 11px;bottom:98px;max-width:92vw;text-align:center}
+    #btnRoCollapse{width:26px;height:26px}
+  }
+
+  /* on-screen walk controls (touch devices) */
+  #touchpad{position:absolute;left:0;right:0;bottom:20px;display:none;justify-content:space-between;
+    padding:0 20px;pointer-events:none;z-index:6}
+  .tp-group{display:flex;gap:12px;pointer-events:auto}
+  .tp-btn{flex:0 0 auto;width:62px;height:62px;border-radius:50%;font-size:22px;line-height:1;
+    color:var(--ink);background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(8px);
+    display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none;
+    touch-action:none;box-shadow:0 8px 24px -10px rgba(0,0,0,.85)}
+  .tp-btn:active{border-color:var(--amber);color:var(--amber);background:#1f1a10}
+  @media (pointer:coarse){ body.walking #touchpad{display:flex} }
 </style>
 </head>
 <body>
@@ -126,7 +148,7 @@
     </div>
     <div class="row">
       <button id="btnWalls" class="on">▦ Walls: solid</button>
-      <button id="btnLabels" class="on">A Labels: on</button>
+      <button id="btnLabels">A Labels: off</button>
     </div>
     <div class="row">
       <button id="btnRoof">▤ Roof: off</button>
@@ -167,6 +189,16 @@
   <div id="hint"><b>drag</b> rotate · <b>scroll</b> zoom · <b>right-drag</b> pan</div>
   <div id="crosshair"></div>
   <div id="walkHud"><b>W/S</b> move · <b>A/D</b> turn · <b>drag</b> look · <b>scroll</b> zoom · <b>double-click</b> a door</div>
+  <div id="touchpad">
+    <div class="tp-group">
+      <button class="tp-btn" data-key="KeyA">◀</button>
+      <button class="tp-btn" data-key="KeyD">▶</button>
+    </div>
+    <div class="tp-group">
+      <button class="tp-btn" data-key="KeyW">▲</button>
+      <button class="tp-btn" data-key="KeyS">▼</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -500,8 +532,9 @@ function drawMini(px,pz,bearing){
 }
 
 // ---------- UI ----------
-let wallsSolid=true, labelsOn=true;
+let wallsSolid=true, labelsOn=false;
 const $=id=>document.getElementById(id);
+labelObjs.forEach(l=> l.visible = labelsOn);   // labels start hidden
 $('btnWalls').onclick=()=>{ wallsSolid=!wallsSolid;
   wallMats.forEach(m=>m.opacity=wallsSolid?1:0.22);
   $('btnWalls').classList.toggle('on',wallsSolid);
@@ -581,14 +614,31 @@ addEventListener('keyup', e=>{ keys[e.code]=false; });
 renderer.domElement.addEventListener('wheel',e=>{ if(!walkMode)return; e.preventDefault();
   camera.fov = Math.max(25, Math.min(85, camera.fov + (e.deltaY>0? 3 : -3)));
   camera.updateProjectionMatrix(); }, {passive:false});
-renderer.domElement.addEventListener('dblclick', e=>{
+function toggleDoorAt(clientX, clientY){
   const rect=renderer.domElement.getBoundingClientRect();
-  ndc.x=((e.clientX-rect.left)/rect.width)*2-1;
-  ndc.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  ndc.x=((clientX-rect.left)/rect.width)*2-1;
+  ndc.y=-((clientY-rect.top)/rect.height)*2+1;
   ray.setFromCamera(ndc,camera);
   const hit=ray.intersectObjects(doorLeaves,false)[0];
   if(hit){ const o=hit.object.userData.door;
     o.isOpen=!o.isOpen; o.target=o.isOpen?o.openAngle:0; o.active=!o.isOpen; }
+}
+renderer.domElement.addEventListener('dblclick', e=> toggleDoorAt(e.clientX,e.clientY));
+// touch: a quick tap (not a drag) opens/closes a door
+let tapInfo=null;
+renderer.domElement.addEventListener('pointerdown', e=>{ if(e.pointerType==='touch') tapInfo={x:e.clientX,y:e.clientY,t:performance.now()}; });
+renderer.domElement.addEventListener('pointerup', e=>{ if(e.pointerType==='touch' && tapInfo){
+  const dx=e.clientX-tapInfo.x, dy=e.clientY-tapInfo.y;
+  if(dx*dx+dy*dy<40 && performance.now()-tapInfo.t<300) toggleDoorAt(e.clientX,e.clientY);
+  tapInfo=null; } });
+
+// on-screen move/turn pad (hold to move; works for touch and mouse)
+document.querySelectorAll('.tp-btn').forEach(b=>{
+  const k=b.dataset.key, set=v=>e=>{ e.preventDefault(); keys[k]=v; };
+  b.addEventListener('pointerdown',  set(true));
+  b.addEventListener('pointerup',    set(false));
+  b.addEventListener('pointerleave', set(false));
+  b.addEventListener('pointercancel',set(false));
 });
 
 function blocked(px,pz){
