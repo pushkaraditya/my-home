@@ -85,7 +85,7 @@
   #panel.collapsed{width:auto}
   #panel.collapsed #panelBody{display:none}
 
-  #readout{position:absolute;top:18px;right:18px;min-width:184px;background:var(--panel);
+  #readout{position:absolute;top:18px;right:18px;width:150px;background:var(--panel);
     border:1px solid var(--line);border-radius:12px;padding:11px 13px;backdrop-filter:blur(10px);
     pointer-events:none;box-shadow:0 14px 40px -22px rgba(0,0,0,.8)}
   #roTitle{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px}
@@ -126,7 +126,8 @@
       <button id="btnLabels" class="on">A Labels: on</button>
     </div>
     <div class="row">
-      <button id="btnWalk">🚶 Walk through</button>
+      <button id="btnRoof" class="on">▤ Roof: on</button>
+      <button id="btnWalk">🚶 Walk</button>
     </div>
     <div style="margin-top:10px">
       <div class="stat"><span>Footprint span</span><b id="span">—</b></div>
@@ -158,7 +159,7 @@
 
   <div id="hint"><b>drag</b> rotate · <b>scroll</b> zoom · <b>right-drag</b> pan</div>
   <div id="crosshair"></div>
-  <div id="walkHud"><b>Drag</b> to look · <b>W A S D</b> / arrows to move · <b>scroll</b> to zoom · hit <b>Walk: exit</b> to leave</div>
+  <div id="walkHud"><b>W/S</b> move · <b>A/D</b> turn · <b>drag</b> look · <b>scroll</b> zoom · <b>double-click</b> a door</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -195,6 +196,19 @@ const EXTRA_WALLS = [
 // Free-standing structural pillars {x,z = centre (cm), s = side (cm)}.
 const PILLARS = [
   { x:596, z:428, s:35, label:'pillar' },
+];
+
+// Doors: 3.5 ft wide, 6.5 ft tall. orient 'NS' = wall runs along X at fixed z=coord;
+// 'WE' = wall runs along Z at fixed x=coord. lo/hi = opening interval (cm) along the run.
+const DW = 3.5*30.48, DH = 6.5*30.48;       // door width / height in cm (106.7 / 198.1)
+const DOORS = [
+  { orient:'NS', coord:800, lo:860-DW,  hi:860,     hinge:'hi', into:'-z' }, // 1 Hall · S · against Bedroom 2
+  { orient:'WE', coord:860, lo:0,       hi:DW,      hinge:'lo', into:'+x' }, // 2 Master Bedroom · W · at N
+  { orient:'NS', coord:300, lo:1070,    hi:1070+DW, hinge:'lo', into:'+z' }, // 3 Master Bathroom · N · from W
+  { orient:'WE', coord:860, lo:500,     hi:500+DW,  hinge:'lo', into:'+x' }, // 4 Bedroom 2 · W · at N
+  { orient:'NS', coord:500, lo:1070-DW, hi:1070,    hinge:'lo', into:'-z' }, // 5 Bed-2 Bathroom · S · into bath (shifted W to fit)
+  { orient:'WE', coord:260, lo:420-DW,  hi:420,     hinge:'hi', into:'+x' }, // 6 Kitchen · W · at S (to backyard)
+  { orient:'NS', coord:420, lo:0,       hi:DW,      hinge:'lo', into:'+z' }, // 7 Guest Bedroom · N · at W
 ];
 
 // bounding box for centring
@@ -252,8 +266,36 @@ const grid = new THREE.GridHelper(120,120,0x223040,0x161e29);
 grid.position.y=-0.01; scene.add(grid);
 
 // ---------- build rooms ----------
-const wallMats=[], labelObjs=[], solids=[];
+const wallMats=[], labelObjs=[], solids=[], colliders=[];
+const EYE_CM = 160;                          // collision sampled at eye height (1.6 m)
 let definedArea=0, definedCount=0;
+
+// builds a wall along a run, leaving gaps for doors and adding a lintel above each
+function addWallBox(orient, perpCm, sCm, eCm, y0Cm, y1Cm, mat){
+  const len=eCm-sCm; if(len<=0.5) return;
+  const hgt=y1Cm-y0Cm, yc=(y0Cm+y1Cm)/2;
+  let geo, px, pz;
+  if(orient==='NS'){ geo=new THREE.BoxGeometry(M(len), M(hgt), M(WALL_T)); px=(sCm+eCm)/2; pz=perpCm; }
+  else             { geo=new THREE.BoxGeometry(M(WALL_T), M(hgt), M(len)); px=perpCm; pz=(sCm+eCm)/2; }
+  const m=new THREE.Mesh(geo, mat); m.position.set(wx(px), M(yc), wz(pz));
+  m.castShadow=true; m.receiveShadow=true; scene.add(m); solids.push(m);
+  // collider only if this piece spans eye height (so doorway lintels don't block you)
+  if(y0Cm<=EYE_CM && y1Cm>=EYE_CM){
+    if(orient==='NS') colliders.push({x0:sCm, x1:eCm, z0:perpCm-WALL_T/2, z1:perpCm+WALL_T/2});
+    else              colliders.push({x0:perpCm-WALL_T/2, x1:perpCm+WALL_T/2, z0:sCm, z1:eCm});
+  }
+}
+function buildWallRun(orient, perpCm, runS, runE, mat, intervals){
+  intervals = intervals.map(iv=>[Math.max(runS,iv[0]), Math.min(runE,iv[1])])
+                       .filter(iv=>iv[1]>iv[0]).sort((p,q)=>p[0]-q[0]);
+  let cur=runS;
+  for(const [a,b] of intervals){
+    if(a>cur) addWallBox(orient,perpCm,cur,a,0,WALL_H,mat);
+    addWallBox(orient,perpCm,a,b,DH,WALL_H,mat);   // lintel above the doorway
+    cur=b;
+  }
+  if(cur<runE) addWallBox(orient,perpCm,cur,runE,0,WALL_H,mat);
+}
 
 ROOMS.forEach(r=>{
   const fx = wx(r.x + r.w/2), fz = wz(r.z + r.d/2);
@@ -274,23 +316,27 @@ ROOMS.forEach(r=>{
   edges.position.copy(floor.position); scene.add(edges);
 
   // walls (skip for outdoor + tbd so they read as open spaces)
-  const h = M(WALL_H), t = M(WALL_T), tc = WALL_T;
+  const tc = WALL_T;
   const wallMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(r.color).multiplyScalar(0.5),   // darker tint of the room's floor colour
     roughness:.85, metalness:.02, transparent:true, opacity:1 });
   const hasWalls = !r.tbd && !r.outdoor;
   if(hasWalls){
     wallMats.push(wallMat);
-    const mk=(px,pz,sw,sd)=>{
-      const m=new THREE.Mesh(new THREE.BoxGeometry(sw,h,sd), wallMat);
-      m.position.set(wx(px), h/2, wz(pz)); m.castShadow=true; m.receiveShadow=true; scene.add(m); solids.push(m);
-    };
     const open = r.open||[];
-    // walls inset just inside the room so each room keeps its own wall colour on shared edges
-    if(!open.includes('N')) mk(r.x+r.w/2,      r.z + tc/2,     fw, t);  // north
-    if(!open.includes('S')) mk(r.x+r.w/2,      r.z+r.d - tc/2, fw, t);  // south
-    if(!open.includes('W')) mk(r.x + tc/2,     r.z+r.d/2,      t,  fd); // west
-    if(!open.includes('E')) mk(r.x+r.w - tc/2, r.z+r.d/2,      t,  fd); // east
+    const sidesDef = {
+      N:{orient:'NS', boundary:r.z,      inset:r.z+tc/2,      s:r.x, e:r.x+r.w},
+      S:{orient:'NS', boundary:r.z+r.d,  inset:r.z+r.d-tc/2,  s:r.x, e:r.x+r.w},
+      W:{orient:'WE', boundary:r.x,      inset:r.x+tc/2,      s:r.z, e:r.z+r.d},
+      E:{orient:'WE', boundary:r.x+r.w,  inset:r.x+r.w-tc/2,  s:r.z, e:r.z+r.d},
+    };
+    ['N','S','W','E'].forEach(side=>{
+      if(open.includes(side)) return;
+      const sd=sidesDef[side];
+      const ivs=DOORS.filter(dr=>dr.orient===sd.orient && Math.abs(dr.coord-sd.boundary)<=1
+                  && dr.hi>sd.s+1 && dr.lo<sd.e-1).map(dr=>[dr.lo,dr.hi]);
+      buildWallRun(sd.orient, sd.inset, sd.s, sd.e, wallMat, ivs);
+    });
   }
   if(!r.tbd){ definedArea += (r.w*r.d)/10000; definedCount++; }
 
@@ -310,6 +356,7 @@ EXTRA_WALLS.forEach(w=>{
   const m=new THREE.Mesh(new THREE.BoxGeometry(M(w.lx), M(WALL_H), M(w.lz)), mat);
   m.position.set(wx(w.cx), M(WALL_H)/2, wz(w.cz)); m.castShadow=true; m.receiveShadow=true;
   scene.add(m); wallMats.push(mat); solids.push(m);
+  colliders.push({x0:w.cx-w.lx/2, x1:w.cx+w.lx/2, z0:w.cz-w.lz/2, z1:w.cz+w.lz/2});
 });
 
 // ---------- structural pillars (always solid — NOT affected by the glass toggle) ----------
@@ -317,12 +364,56 @@ PILLARS.forEach(p=>{
   const m=new THREE.Mesh(new THREE.BoxGeometry(M(p.s), M(WALL_H), M(p.s)),
     new THREE.MeshStandardMaterial({color:0x596169, roughness:.7, metalness:.06}));
   m.position.set(wx(p.x), M(WALL_H)/2, wz(p.z)); m.castShadow=true; m.receiveShadow=true; scene.add(m); solids.push(m);
+  colliders.push({x0:p.x-p.s/2, x1:p.x+p.s/2, z0:p.z-p.s/2, z1:p.z+p.s/2});
   if(p.label){
     const el=document.createElement('div'); el.className='room-label';
     el.innerHTML=`<div class="dm" style="color:#b7bfca">▣ ${p.label}</div>`;
     const o=new THREE.CSS2DObject(el); o.position.set(wx(p.x), M(WALL_H)+0.2, wz(p.z));
     scene.add(o); labelObjs.push(o);
   }
+});
+
+// ---------- doors: openings cut in walls; add threshold + a swung leaf (double-click to open/close) ----------
+const doorMat=new THREE.MeshStandardMaterial({color:0xb0895a, roughness:.6, metalness:.03});
+const thMat=new THREE.MeshStandardMaterial({color:0xe3a648, roughness:.9});
+const SWING=0.72;   // ~41° open
+const doorObjs=[], doorLeaves=[];
+DOORS.forEach(d=>{
+  const L=d.hi-d.lo, mid=(d.lo+d.hi)/2;
+  // threshold strip on the floor
+  let tg;
+  if(d.orient==='NS'){ tg=new THREE.Mesh(new THREE.BoxGeometry(M(L),0.03,M(WALL_T+8)), thMat); tg.position.set(wx(mid),0.03,wz(d.coord)); }
+  else               { tg=new THREE.Mesh(new THREE.BoxGeometry(M(WALL_T+8),0.03,M(L)), thMat); tg.position.set(wx(d.coord),0.03,wz(mid)); }
+  scene.add(tg);
+  // hinged leaf
+  const grp=new THREE.Group(); let openAngle=0, leaf;
+  if(d.orient==='NS'){
+    const hx=(d.hinge==='lo'?d.lo:d.hi), dirx=(d.hinge==='lo'?1:-1), sz=(d.into==='+z'?1:-1);
+    grp.position.set(wx(hx), M(DH)/2, wz(d.coord));
+    leaf=new THREE.Mesh(new THREE.BoxGeometry(M(L),M(DH),0.045), doorMat);
+    leaf.position.x=dirx*M(L)/2; openAngle=-sz*dirx*SWING;
+  } else {
+    const hz=(d.hinge==='lo'?d.lo:d.hi), dirz=(d.hinge==='lo'?1:-1), sx=(d.into==='+x'?1:-1);
+    grp.position.set(wx(d.coord), M(DH)/2, wz(hz));
+    leaf=new THREE.Mesh(new THREE.BoxGeometry(0.045,M(DH),M(L)), doorMat);
+    leaf.position.z=dirz*M(L)/2; openAngle=sx*dirz*SWING;
+  }
+  grp.add(leaf); grp.rotation.y=openAngle; scene.add(grp);
+  // collider rect blocking the doorway — active only when the door is CLOSED
+  const rect = (d.orient==='NS')
+    ? {x0:d.lo, x1:d.hi, z0:d.coord-WALL_T/2, z1:d.coord+WALL_T/2}
+    : {x0:d.coord-WALL_T/2, x1:d.coord+WALL_T/2, z0:d.lo, z1:d.hi};
+  const obj={grp, openAngle, isOpen:true, target:openAngle, rect, active:false};
+  doorObjs.push(obj); leaf.userData.door=obj; doorLeaves.push(leaf);
+});
+
+// ---------- roof (per-room ceiling slabs; toggleable) ----------
+const roofGroup=new THREE.Group(); scene.add(roofGroup);
+ROOMS.forEach(r=>{ if(r.tbd||r.outdoor) return;
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(M(r.w),0.08,M(r.d)),
+    new THREE.MeshStandardMaterial({color:0xe7e3d8, roughness:.95, metalness:0}));
+  slab.position.set(wx(r.x+r.w/2), M(WALL_H)+0.02, wz(r.z+r.d/2));
+  roofGroup.add(slab);
 });
 
 // direction markers — positioned in world space so they track the model as it rotates.
@@ -386,6 +477,11 @@ $('btnCollapse').onclick=()=>{ const p=$('panel'); p.classList.toggle('collapsed
 $('btnRoCollapse').onclick=()=>{ const r=$('readout'); r.classList.toggle('collapsed');
   $('btnRoCollapse').textContent = r.classList.contains('collapsed')?'▸':'▾'; };
 
+let roofOn=true;
+$('btnRoof').onclick=()=>{ roofOn=!roofOn; roofGroup.visible=roofOn;
+  $('btnRoof').classList.toggle('on',roofOn);
+  $('btnRoof').textContent=roofOn?'▤ Roof: on':'▤ Roof: off'; };
+
 function tween(toPos,toTgt){
   const p0=camera.position.clone(), t0=controls.target.clone(), t=performance.now();
   (function step(){ const k=Math.min((performance.now()-t)/650,1), e=1-Math.pow(1-k,3);
@@ -398,7 +494,7 @@ $('btnTop').onclick=()=>tween(new THREE.Vector3(0.01,26,0.01), new THREE.Vector3
 // ---------- first-person walk mode (iframe-safe — drag to look, no Pointer Lock) ----------
 const keys = {};
 const UP = new THREE.Vector3(0,1,0);
-const EYE = 1.6, SPEED = 3.4, LOOK = 0.0026;   // eye height (m), speed (m/s), look sensitivity
+const EYE = 1.6, SPEED = 3.0, LOOK = 0.0026, TURN = 1.9, R = 20;  // m · m/s · look · turn rad/s · body radius (cm)
 let walkMode=false, dragging=false, lastX=0, lastY=0;
 let yaw=0, pitch=0, lastT=performance.now();
 const savedCam=new THREE.Vector3(), savedTgt=new THREE.Vector3();
@@ -412,7 +508,7 @@ function enterWalk(){
   yaw=0; pitch=0; applyLook();                          // face North (-Z)
   camera.fov=60; camera.updateProjectionMatrix();      // slightly wider lens for walking
   document.body.classList.add('walking');
-  $('btnWalk').classList.add('on'); $('btnWalk').textContent='🚶 Walk: exit';
+  $('btnWalk').classList.add('on'); $('btnWalk').textContent='🚶 Exit';
   $('panel').classList.add('collapsed'); $('btnCollapse').textContent='▸';
 }
 function exitWalk(){
@@ -420,7 +516,7 @@ function exitWalk(){
   camera.position.copy(savedCam); controls.target.copy(savedTgt);
   camera.fov=48; camera.updateProjectionMatrix();
   document.body.classList.remove('walking','grabbing');
-  $('btnWalk').classList.remove('on'); $('btnWalk').textContent='🚶 Walk through';
+  $('btnWalk').classList.remove('on'); $('btnWalk').textContent='🚶 Walk';
   $('panel').classList.remove('collapsed'); $('btnCollapse').textContent='▾';
 }
 $('btnWalk').onclick=()=> walkMode ? exitWalk() : enterWalk();
@@ -439,23 +535,44 @@ addEventListener('keyup', e=>{ keys[e.code]=false; });
 renderer.domElement.addEventListener('wheel',e=>{ if(!walkMode)return; e.preventDefault();
   camera.fov = Math.max(25, Math.min(85, camera.fov + (e.deltaY>0? 3 : -3)));
   camera.updateProjectionMatrix(); }, {passive:false});
+renderer.domElement.addEventListener('dblclick', e=>{
+  const rect=renderer.domElement.getBoundingClientRect();
+  ndc.x=((e.clientX-rect.left)/rect.width)*2-1;
+  ndc.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  ray.setFromCamera(ndc,camera);
+  const hit=ray.intersectObjects(doorLeaves,false)[0];
+  if(hit){ const o=hit.object.userData.door;
+    o.isOpen=!o.isOpen; o.target=o.isOpen?o.openAngle:0; o.active=!o.isOpen; }
+});
 
+function blocked(px,pz){
+  for(const c of colliders) if(px>c.x0-R && px<c.x1+R && pz>c.z0-R && pz<c.z1+R) return true;
+  for(const o of doorObjs) if(o.active){ const c=o.rect;
+    if(px>c.x0-R && px<c.x1+R && pz>c.z0-R && pz<c.z1+R) return true; }
+  return false;
+}
 function walkStep(){
   const now=performance.now(), dt=Math.min((now-lastT)/1000, .05); lastT=now;
+  // turn with A/D (or Left/Right arrows)
+  if(keys['KeyA']||keys['ArrowLeft'])  yaw += TURN*dt;
+  if(keys['KeyD']||keys['ArrowRight']) yaw -= TURN*dt;
+  applyLook();
+  // move with W/S (or Up/Down arrows), blocked by walls & pillars, free through open doors
   const look=new THREE.Vector3(); camera.getWorldDirection(look);
   const fwd=look.clone(); fwd.y=0;
-  if(fwd.lengthSq()>1e-6){
-    fwd.normalize();
-    const right=new THREE.Vector3().crossVectors(fwd, UP).normalize();
-    const move=new THREE.Vector3();
-    if(keys['KeyW']||keys['ArrowUp'])    move.add(fwd);
-    if(keys['KeyS']||keys['ArrowDown'])  move.sub(fwd);
-    if(keys['KeyD']||keys['ArrowRight']) move.add(right);
-    if(keys['KeyA']||keys['ArrowLeft'])  move.sub(right);
-    if(move.lengthSq()>0){ move.normalize().multiplyScalar(SPEED*dt); camera.position.add(move); }
+  let mv=0;
+  if(keys['KeyW']||keys['ArrowUp'])   mv+=1;
+  if(keys['KeyS']||keys['ArrowDown']) mv-=1;
+  if(mv!==0 && fwd.lengthSq()>1e-6){
+    const f=fwd.clone().normalize(), stepCm=SPEED*dt*mv*100;
+    let pX=camera.position.x*100+cx, pZ=camera.position.z*100+cz;
+    const dxc=f.x*stepCm, dzc=f.z*stepCm;
+    if(!blocked(pX+dxc, pZ)) pX+=dxc;     // axis-separated so you slide along walls
+    if(!blocked(pX, pZ+dzc)) pZ+=dzc;
+    camera.position.x=(pX-cx)/100; camera.position.z=(pZ-cz)/100;
   }
-  camera.position.y=EYE;                 // stay grounded
-  // ---- measuring readout: position, current room, facing, distance to surface aimed at ----
+  camera.position.y=EYE;
+  // ---- measuring readout ----
   const xcm=camera.position.x*100+cx, zcm=camera.position.z*100+cz;
   const bearing=(Math.atan2(fwd.x, -fwd.z)*180/Math.PI+360)%360;
   const card=['N','NE','E','SE','S','SW','W','NW'][Math.round(bearing/45)%8];
@@ -474,6 +591,7 @@ addEventListener('resize',()=>{
   camera.aspect=W()/Hh(); camera.updateProjectionMatrix();
   renderer.setSize(W(),Hh()); labelRenderer.setSize(W(),Hh()); });
 (function animate(){ requestAnimationFrame(animate);
+  doorObjs.forEach(o=>{ o.grp.rotation.y += (o.target - o.grp.rotation.y)*0.18; });
   if(walkMode) walkStep(); else { lastT=performance.now(); controls.update(); }
   renderer.render(scene,camera); labelRenderer.render(scene,camera); })();
 </script>
