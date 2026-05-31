@@ -129,6 +129,9 @@
       <button id="btnRoof" class="on">▤ Roof: on</button>
       <button id="btnWalk">🚶 Walk</button>
     </div>
+    <div class="row">
+      <button id="btnDoors">⊐ Open all doors</button>
+    </div>
     <div style="margin-top:10px">
       <div class="stat"><span>Footprint span</span><b id="span">—</b></div>
       <div class="stat"><span>Wall height</span><b>10 ft</b></div>
@@ -173,8 +176,9 @@ const ROOMS = [
   { id:'BY', name:'Backyard', x:0,   z:0,   w:260, d:420, color:0x88a36a, outdoor:true },
   { id:'KT', name:'Kitchen',  x:260, z:0,   w:240, d:420, color:0xd8b48a, open:['E'] },
   { id:'GT', name:'Guest Bed + Theatre', x:0, z:420, w:500, d:240, color:0xb9aecb },
-  { id:'GC', name:'Guest Closet',   x:0,   z:660, w:250, d:140, color:0xcbb27a },
-  { id:'GB', name:'Guest Bathroom', x:250, z:660, w:250, d:140, color:0x8fb4c4 },
+  { id:'GC', name:'Guest Closet',   x:0,      z:660, w:128.08, d:140, color:0xcbb27a },
+  { id:'GB', name:'Guest Bathroom', x:128.08, z:660, w:250,    d:140, color:0x8fb4c4 },
+  { id:'GL', name:'Guest entry',    x:378.08, z:660, w:121.92, d:140, color:0xb9aecb, open:['N'], noLabel:true },
   // ---------------- CENTRAL SPINE ----------------
   { id:'HD', name:'Central Hall + Dining', x:500, z:0, w:360, d:800, color:0xd9cdb6, open:['W'] },
   // -------- RIGHT CLUSTER (depth 300+200+300 = 800, matches hall). Both baths equal: 210x200 --------
@@ -184,15 +188,13 @@ const ROOMS = [
   { id:'B2', name:'Bedroom 2',        x:860,  z:500, w:420, d:300, color:0x9ec1a8 },
 ];
 
-const WALL_H = 305, WALL_T = 12;            // cm
+const WALL_H = 305, WALL_T = 9*2.54;        // cm — walls 9 inches thick (22.86 cm)
 const M = v => v/100;                        // cm -> m (scene units)
 const FT = cm => cm/30.48;                   // cm -> feet
 const ft1 = cm => FT(cm).toFixed(1);         // cm -> feet, 1 decimal
 
 // Custom wall segments {cx,cz = centre (cm), lx,lz = length (cm), color}
-const EXTRA_WALLS = [
-  { cx:506, cz:610, lx:WALL_T, lz:380, color:0x6c665b },   // hall west wall beside the guest suite (z 420-800), inset inside the hall
-];
+const EXTRA_WALLS = [];   // hall's west side (z 420-800) is now formed by the guest-suite east walls
 // Free-standing structural pillars {x,z = centre (cm), s = side (cm)}.
 const PILLARS = [
   { x:596, z:428, s:35, label:'pillar' },
@@ -208,7 +210,10 @@ const DOORS = [
   { orient:'WE', coord:860, lo:500,     hi:500+DW,  hinge:'lo', into:'+x' }, // 4 Bedroom 2 · W · at N
   { orient:'NS', coord:500, lo:1070-DW, hi:1070,    hinge:'lo', into:'-z' }, // 5 Bed-2 Bathroom · S · into bath (shifted W to fit)
   { orient:'WE', coord:260, lo:420-DW,  hi:420,     hinge:'hi', into:'+x' }, // 6 Kitchen · W · at S (to backyard)
-  { orient:'NS', coord:420, lo:0,       hi:DW,      hinge:'lo', into:'+z' }, // 7 Guest Bedroom · N · at W
+  { orient:'NS', coord:420, lo:0,       hi:DW,      hinge:'lo', into:'+z' }, // 7 Guest Bedroom · N · at W (to backyard)
+  { orient:'WE', coord:378.08, lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 8 Guest Bathroom · E · at S (into bath)
+  { orient:'WE', coord:500,    lo:660-DW, hi:660,   hinge:'hi', into:'-x' }, // 9 Guest Bedroom · E · at S (into bedroom, from hall)
+  { orient:'NS', coord:660,    lo:378.08, hi:500,   passage:true },          // open passage: guest bedroom <-> entry
 ];
 
 // bounding box for centring
@@ -297,6 +302,8 @@ function buildWallRun(orient, perpCm, runS, runE, mat, intervals){
   if(cur<runE) addWallBox(orient,perpCm,cur,runE,0,WALL_H,mat);
 }
 
+const wallMat = new THREE.MeshStandardMaterial({ color:0x39414d, roughness:.85, metalness:.02, transparent:true, opacity:1 });
+wallMats.push(wallMat);
 ROOMS.forEach(r=>{
   const fx = wx(r.x + r.w/2), fz = wz(r.z + r.d/2);
   const fw = M(r.w), fd = M(r.d);
@@ -316,38 +323,35 @@ ROOMS.forEach(r=>{
   edges.position.copy(floor.position); scene.add(edges);
 
   // walls (skip for outdoor + tbd so they read as open spaces)
-  const tc = WALL_T;
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(r.color).multiplyScalar(0.5),   // darker tint of the room's floor colour
-    roughness:.85, metalness:.02, transparent:true, opacity:1 });
   const hasWalls = !r.tbd && !r.outdoor;
   if(hasWalls){
-    wallMats.push(wallMat);
     const open = r.open||[];
     const sidesDef = {
-      N:{orient:'NS', boundary:r.z,      inset:r.z+tc/2,      s:r.x, e:r.x+r.w},
-      S:{orient:'NS', boundary:r.z+r.d,  inset:r.z+r.d-tc/2,  s:r.x, e:r.x+r.w},
-      W:{orient:'WE', boundary:r.x,      inset:r.x+tc/2,      s:r.z, e:r.z+r.d},
-      E:{orient:'WE', boundary:r.x+r.w,  inset:r.x+r.w-tc/2,  s:r.z, e:r.z+r.d},
+      N:{orient:'NS', boundary:r.z,      s:r.x, e:r.x+r.w},
+      S:{orient:'NS', boundary:r.z+r.d,  s:r.x, e:r.x+r.w},
+      W:{orient:'WE', boundary:r.x,      s:r.z, e:r.z+r.d},
+      E:{orient:'WE', boundary:r.x+r.w,  s:r.z, e:r.z+r.d},
     };
     ['N','S','W','E'].forEach(side=>{
       if(open.includes(side)) return;
       const sd=sidesDef[side];
-      const ivs=DOORS.filter(dr=>dr.orient===sd.orient && Math.abs(dr.coord-sd.boundary)<=1
+      const ivs=DOORS.filter(dr=>dr.orient===sd.orient && Math.abs(dr.coord-sd.boundary)<=1.5
                   && dr.hi>sd.s+1 && dr.lo<sd.e-1).map(dr=>[dr.lo,dr.hi]);
-      buildWallRun(sd.orient, sd.inset, sd.s, sd.e, wallMat, ivs);
+      buildWallRun(sd.orient, sd.boundary, sd.s, sd.e, wallMat, ivs);   // wall centred on the boundary
     });
   }
   if(!r.tbd){ definedArea += (r.w*r.d)/10000; definedCount++; }
 
   // label
-  const el=document.createElement('div');
-  el.className='room-label';
-  const dm = (r.outdoor?'outdoor · ':'')+`${ft1(r.w)} × ${ft1(r.d)} ft`;
-  el.innerHTML = `<div class="nm">${r.name}</div><div class="dm">${dm}</div>`;
-  const lab=new THREE.CSS2DObject(el);
-  lab.position.set(fx, (hasWalls?M(WALL_H):M(70))+0.25, fz);
-  scene.add(lab); labelObjs.push(lab);
+  if(!r.noLabel){
+    const el=document.createElement('div');
+    el.className='room-label';
+    const dm = (r.outdoor?'outdoor · ':'')+`${ft1(r.w)} × ${ft1(r.d)} ft`;
+    el.innerHTML = `<div class="nm">${r.name}</div><div class="dm">${dm}</div>`;
+    const lab=new THREE.CSS2DObject(el);
+    lab.position.set(fx, (hasWalls?M(WALL_H):M(70))+0.25, fz);
+    scene.add(lab); labelObjs.push(lab);
+  }
 });
 
 // ---------- custom wall segments ----------
@@ -379,6 +383,7 @@ const thMat=new THREE.MeshStandardMaterial({color:0xe3a648, roughness:.9});
 const SWING=0.72;   // ~41° open
 const doorObjs=[], doorLeaves=[];
 DOORS.forEach(d=>{
+  if(d.passage) return;   // passages are plain wall openings — no leaf, threshold, or toggle
   const L=d.hi-d.lo, mid=(d.lo+d.hi)/2;
   // threshold strip on the floor
   let tg;
@@ -398,12 +403,12 @@ DOORS.forEach(d=>{
     leaf=new THREE.Mesh(new THREE.BoxGeometry(0.045,M(DH),M(L)), doorMat);
     leaf.position.z=dirz*M(L)/2; openAngle=sx*dirz*SWING;
   }
-  grp.add(leaf); grp.rotation.y=openAngle; scene.add(grp);
-  // collider rect blocking the doorway — active only when the door is CLOSED
+  grp.add(leaf); grp.rotation.y=0; scene.add(grp);     // start CLOSED
+  // collider rect blocking the doorway — active while the door is CLOSED
   const rect = (d.orient==='NS')
     ? {x0:d.lo, x1:d.hi, z0:d.coord-WALL_T/2, z1:d.coord+WALL_T/2}
     : {x0:d.coord-WALL_T/2, x1:d.coord+WALL_T/2, z0:d.lo, z1:d.hi};
-  const obj={grp, openAngle, isOpen:true, target:openAngle, rect, active:false};
+  const obj={grp, openAngle, isOpen:false, target:0, rect, active:true};
   doorObjs.push(obj); leaf.userData.door=obj; doorLeaves.push(leaf);
 });
 
@@ -481,6 +486,12 @@ let roofOn=true;
 $('btnRoof').onclick=()=>{ roofOn=!roofOn; roofGroup.visible=roofOn;
   $('btnRoof').classList.toggle('on',roofOn);
   $('btnRoof').textContent=roofOn?'▤ Roof: on':'▤ Roof: off'; };
+
+let allOpen=false;   // doors start closed
+$('btnDoors').onclick=()=>{ allOpen=!allOpen;
+  doorObjs.forEach(o=>{ o.isOpen=allOpen; o.target=allOpen?o.openAngle:0; o.active=!allOpen; });
+  $('btnDoors').textContent = allOpen?'⊏ Close all doors':'⊐ Open all doors';
+  $('btnDoors').classList.toggle('on', allOpen); };
 
 function tween(toPos,toTgt){
   const p0=camera.position.clone(), t0=controls.target.clone(), t=performance.now();
