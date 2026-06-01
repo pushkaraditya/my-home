@@ -98,6 +98,7 @@
     border:1px solid var(--line);border-radius:12px;padding:11px 13px;backdrop-filter:blur(10px);
     pointer-events:none;box-shadow:0 14px 40px -22px rgba(0,0,0,.8)}
   #roTitle{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px}
+  #nameToast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);background:rgba(20,18,14,.92);color:var(--amber);border:1px solid rgba(214,158,74,.55);padding:8px 16px;border-radius:11px;font:600 14px "Fraunces",serif;letter-spacing:.02em;opacity:0;transition:opacity .25s;pointer-events:none;z-index:60;white-space:nowrap}
   #roHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
   #roHead #roTitle{margin-bottom:0}
   #btnRoCollapse{flex:0 0 auto;width:22px;height:22px;padding:0;font-size:11px;border-radius:6px;pointer-events:auto}
@@ -194,6 +195,7 @@
     </div>
   </div>
 
+  <div id="nameToast"></div>
   <div id="readout">
     <div id="roHead">
       <div id="roTitle">Cursor position</div>
@@ -562,7 +564,7 @@ PILLARS.forEach(p=>{
 // ---------- doors: openings cut in walls; add threshold + a swung leaf (double-click to open/close) ----------
 const doorMat=new THREE.MeshStandardMaterial({color:0x7a4f2b, map:TEX_WOOD, roughness:.55, metalness:.03}); // wooden, distinct from walls
 const thMat=new THREE.MeshStandardMaterial({color:0xe3a648, roughness:.9});
-const SWING=1.52;   // ~87° — opens flush against the wall
+const SWING=1.30;   // ~74° — wide open but the leaf stays visible in the room (doesn't bury in the side wall)
 const doorObjs=[], doorLeaves=[];
 DOORS.forEach(d=>{
   if(d.passage) return;   // passages are plain wall openings — no leaf, threshold, or toggle
@@ -595,7 +597,7 @@ DOORS.forEach(d=>{
 });
 
 // ---------- openable cabinet/appliance doors (click to open) + unit labels ----------
-const unitObjs=[], unitLeaves=[], unitLabels=[], fans=[];
+const unitObjs=[], unitLeaves=[], unitLabels=[], fans=[], gateUnits=[];
 function addCab(cx, cz, span, y0, y1, face, hinge, mat){
   const grp=new THREE.Group(); const h=y1-y0, yc=(y0+y1)/2; let leaf, openAngle;
   const hcol=new THREE.MeshStandardMaterial({color:0x222428,roughness:.4,metalness:.6});
@@ -651,8 +653,7 @@ const gz0 = 210 - GATE_W/2, gz1 = 210 + GATE_W/2;   // 6 ft gate centred on the 
 addWallBox('WE', 0, 0, gz0, 0, BASE_H, byMat);
 addWallBox('WE', 0, gz1, 420, 0, BASE_H, byMat);
 addWallBox('NS', 0, 0, 260, 0, BASE_H, byMat);
-colliders.push({x0:-WALL_T/2,x1:WALL_T/2, z0:0, z1:420});
-colliders.push({x0:-WALL_T,x1:WALL_T, z0:gz0, z1:gz1});   // gate opening stays solid (can't walk out)
+// west boundary: the 6ft masonry pieces already push colliders; the gate gap is handled in blocked() by gate state
 colliders.push({x0:0,x1:260, z0:-WALL_T/2, z1:WALL_T/2});
 
 // 2 ft ornamental grille (bars + gold finials + rails) and 2 ft razor-wire coils on top
@@ -708,7 +709,7 @@ const GH=BASE_H;
   }
   const obj={grp, openAngle: dir>0?1.7:-1.7, target:0};       // swing inner edge into the yard (+x)
   grp.children.forEach(ch=>{ ch.userData.unit=obj; unitLeaves.push(ch); });
-  unitObjs.push(obj);
+  unitObjs.push(obj); gateUnits.push(obj);
 });
 
 
@@ -1333,6 +1334,15 @@ renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault();
     camera.position.copy(np); controls.target.copy(nt); controls.update();
   }
 }, {passive:false});
+function nameAt(p){ let best=null, bd=1.5*1.5;
+  for(const l of unitLabels){ const dx=p.x-l.position.x, dy=p.y-l.position.y, dz=p.z-l.position.z, d=dx*dx+dy*dy+dz*dz;
+    if(d<bd){ bd=d; best=l; } }
+  if(best) showName(best.element.textContent);
+}
+function showName(txt){ const t=document.getElementById('nameToast'); if(!t) return;
+  t.textContent=txt; t.style.opacity='1'; clearTimeout(showName._t);
+  showName._t=setTimeout(()=>{ t.style.opacity='0'; }, 2200);
+}
 function toggleDoorAt(clientX, clientY){
   const rect=renderer.domElement.getBoundingClientRect();
   ndc.x=((clientX-rect.left)/rect.width)*2-1;
@@ -1340,9 +1350,11 @@ function toggleDoorAt(clientX, clientY){
   ray.setFromCamera(ndc,camera);
   const hit=ray.intersectObjects(doorLeaves,false)[0];
   if(hit){ const o=hit.object.userData.door;
-    o.isOpen=!o.isOpen; o.target=o.isOpen?o.openAngle:0; o.active=!o.isOpen; return; }
+    o.isOpen=!o.isOpen; o.target=o.isOpen?o.openAngle:0; o.active=!o.isOpen; nameAt(hit.point); return; }
   const hitU=ray.intersectObjects(unitLeaves,false)[0];
-  if(hitU){ const u=hitU.object.userData.unit; u.target = u.target ? 0 : u.openAngle; }
+  if(hitU){ const u=hitU.object.userData.unit; u.target = u.target ? 0 : u.openAngle; nameAt(hitU.point); return; }
+  const hitA=ray.intersectObjects(scene.children,true)[0];   // any appliance / fixture
+  if(hitA) nameAt(hitA.point);
 }
 renderer.domElement.addEventListener('dblclick', e=> toggleDoorAt(e.clientX,e.clientY));
 // touch: a quick tap (not a drag) opens/closes a door
@@ -1366,6 +1378,9 @@ function blocked(px,pz){
   for(const c of colliders) if(px>c.x0-R && px<c.x1+R && pz>c.z0-R && pz<c.z1+R) return true;
   for(const o of doorObjs) if(o.active){ const c=o.rect;
     if(px>c.x0-R && px<c.x1+R && pz>c.z0-R && pz<c.z1+R) return true; }
+  // backyard gate: solid only while closed — open it (click) and you can walk out
+  if(gateUnits.length && !gateUnits.some(o=>Math.abs(o.grp.rotation.y)>0.25)
+     && px>-WALL_T-R && px<WALL_T+R && pz>118 && pz<302) return true;
   return false;
 }
 function walkStep(){
@@ -1422,8 +1437,9 @@ function walkStep(){
     for(let i=0;i<4;i++){ const b=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.012,0.13),bladeM); b.position.x=0.34;
       const bg=new THREE.Group(); bg.add(b); bg.rotation.y=i*Math.PI/2; g.add(bg); }
     fans.push(g);
+    unitLabel('Fan', x, CEIL-0.34, z);
   }
-  const ac=(x,z)=>{ bfix(x,CEIL-0.42,z, 0.92,0.30,0.20, acM); bfix(x,CEIL-0.55,z, 0.86,0.05,0.16, acV); };
+  const ac=(x,z)=>{ bfix(x,CEIL-0.42,z, 0.92,0.30,0.20, acM); bfix(x,CEIL-0.55,z, 0.86,0.05,0.16, acV); unitLabel('AC', x, CEIL-0.42, z); };
   const swR  =new THREE.MeshStandardMaterial({color:0x4a4d52, roughness:.5});
   const sockH=new THREE.MeshStandardMaterial({color:0x3a3d42, roughness:.6});
   function board(x,z,orient,fs){              // switchboard with 3 rocker switches, proud of the wall
@@ -1451,13 +1467,20 @@ function walkStep(){
   });
   // wall-split ACs (bedrooms, hall, theatre), high on a wall
   ac(1000,16);  ac(1000,786);  ac(846,160);  ac(250,432);
-  // switchboards beside every door (latch side, ~1.25 m) + power points in every room
+  // switchboards on the LATCH side of each door (clear of the swinging leaf, never mid-door)
   DOORS.forEach(d=>{ if(d.passage) return; const off=WALL_T/2+1.5;
-    if(d.orient==='NS'){ const fs=(d.into==='+z')?1:-1; board(d.hi+18, d.coord+fs*off, 'NS', fs); }
-    else               { const fs=(d.into==='+x')?1:-1; board(d.coord+fs*off, d.hi+18, 'WE', fs); } });
-  ROOMS.forEach(r=>{ if(r.tbd||r.outdoor) return; const off=WALL_T/2+1.5;
-    socket(r.x+55, r.z+off, 'NS', +1);              // north-wall power point
-    socket(r.x+r.w-55, r.z+r.d-off, 'NS', -1); });  // south-wall power point
+    const latch = d.hinge==='lo' ? d.hi+18 : d.lo-18;
+    if(d.orient==='NS'){ const fs=(d.into==='+z')?1:-1; board(latch, d.coord+fs*off, 'NS', fs); }
+    else               { const fs=(d.into==='+x')?1:-1; board(d.coord+fs*off, latch, 'WE', fs); } });
+  board(1175, WALL_T/2+1.5,     'NS', +1);     // master bedside (headboard wall)
+  board(1175, 800-(WALL_T/2+1.5),'NS', -1);    // bed 2 bedside (headboard wall)
+  // power points — beside each AC unit (low on the same wall) + kitchen
+  socket(1000, WALL_T/2+1.5,      'NS', +1);   // master AC
+  socket(1000, 800-(WALL_T/2+1.5),'NS', -1);   // bed 2 AC
+  socket(860-(WALL_T/2+1.5), 160, 'WE', -1);   // hall AC
+  socket(250,  420+(WALL_T/2+1.5),'NS', +1);   // guest theatre AC
+  socket(330, 420-(WALL_T/2+1.5), 'NS', -1);   // kitchen
+  socket(440, 420-(WALL_T/2+1.5), 'NS', -1);
 
   // ---- exterior facade: stacked-stone cladding (cream) with reddish highlight bands ----
   function ledgerTex(base,mortar){ const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
@@ -1491,21 +1514,21 @@ function walkStep(){
     segs.forEach(([a,b])=>{ if(b-a<3) return; const len=b-a, mid=(a+b)/2;
       if(seg.orient==='NS'){ const zc=seg.coord+seg.out*fo, zb=seg.coord+seg.out*(fo+0.6);
         bfix(mid, M(WALL_H)/2, zc, M(len),M(WALL_H),0.03, ELEV);
-        bfix(mid, M(99),  zb, M(len),M(42),0.03, BAND);    // lower highlight band
-        bfix(mid, M(286), zb, M(len),M(34),0.03, BAND);    // upper band
+        bfix(mid, M(45),  zb, M(len),M(40),0.03, BAND);    // bottom band
+        bfix(mid, M(152), zb, M(len),M(40),0.03, BAND);    // middle band
       } else { const xc=seg.coord+seg.out*fo, xb=seg.coord+seg.out*(fo+0.6);
         bfix(xc, M(WALL_H)/2, mid, 0.03,M(WALL_H),M(len), ELEV);
-        bfix(xb, M(99),  mid, 0.03,M(42),M(len), BAND);
-        bfix(xb, M(286), mid, 0.03,M(34),M(len), BAND);
+        bfix(xb, M(45),  mid, 0.03,M(40),M(len), BAND);
+        bfix(xb, M(152), mid, 0.03,M(40),M(len), BAND);
       }
     });
     for(let t=seg.s+FT5/2; t<seg.e-20; t+=FT5){
       if(sp.some(([a,b])=> t>a-30 && t<b+30)) continue;
       const body=seg.coord+seg.out*(WALL_T/2+5), lens=seg.coord+seg.out*(WALL_T/2+8), wash=seg.coord+seg.out*(WALL_T/2+2);
       if(seg.orient==='NS'){
-        bfix(t,M(121.92),body,0.12,0.18,0.07,lampM); bfix(t,M(121.92),lens,0.08,0.12,0.02,lensM); bfix(t,M(82),wash,0.10,0.74,0.015,washM);
+        bfix(t,M(152.4),body,0.12,0.18,0.07,lampM); bfix(t,M(152.4),lens,0.08,0.12,0.02,lensM); bfix(t,M(112),wash,0.10,0.74,0.015,washM);
       } else {
-        bfix(body,M(121.92),t,0.07,0.18,0.12,lampM); bfix(lens,M(121.92),t,0.02,0.12,0.08,lensM); bfix(wash,M(82),t,0.015,0.74,0.10,washM);
+        bfix(body,M(152.4),t,0.07,0.18,0.12,lampM); bfix(lens,M(152.4),t,0.02,0.12,0.08,lensM); bfix(wash,M(112),t,0.015,0.74,0.10,washM);
       }
     }
   });
