@@ -170,10 +170,9 @@
          max-height:34vh;overflow-y:auto">
       <div style="font-weight:600;color:#f0c986;margin-bottom:4px">Open items / decisions for you</div>
       <ol style="margin:0;padding-left:16px">
-        <li><b>Kitchen appliances homeless:</b> fridge / oven / pantry were removed from the south wall and have no new location yet. Where should they go — north-counter end, an east-side divider, or a utility nook?</li>
-        <li><b>Hanging chair vs gate:</b> the egg chair sits at the pergola centre, which is directly in front of the gate opening (~1.3 m in). Nudge it to a corner to keep the gate path clear?</li>
-        <li><b>Guest closet:</b> still no internal shelving/rail modelled — add a simple rail + shelf inside?</li>
+        <li><b>Pantry location (still open):</b> fridge is now on the dining north wall and the oven is by the dishwasher, but the pantry unit still has no home. Where would you like it — a tall unit at the end of the north counter, beside the fridge in the dining, or elsewhere?</li>
       </ol>
+      <div style="margin-top:6px;color:#8c9; font-size:10.5px">Resolved recently: fridge &amp; oven placed · hanging chair moved off the gate path · guest closet now has double doors + rail/shelves.</div>
     </div>
     <div class="row" style="align-items:center;gap:9px;margin-top:8px">
       <span style="font-size:11px;white-space:nowrap;color:#e8d9bf">☀ Sun</span>
@@ -273,7 +272,8 @@ const DOORS = [
   { orient:'WE', coord:378.08, lo:800-DWB, hi:800,  hinge:'hi', into:'-x' }, // 8 Guest Bathroom · E · opens inward (2.5 ft)
   { orient:'WE', coord:500,    lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 9 Hall → guest entry, directly in front of bathroom door (#8)
   { orient:'NS', coord:660,    lo:378.08, hi:500,   passage:true },          // open passage: guest bedroom <-> entry
-  { orient:'NS', coord:660,    lo:14,      hi:14+DW,  hinge:'lo', into:'+z' }, // 10 Guest Closet · N · opens into guest bedroom
+  { orient:'NS', coord:660,    lo:14,      hi:14+53,  hinge:'lo', into:'-z' }, // 10 Guest Closet · N · left leaf (swings out)
+  { orient:'NS', coord:660,    lo:14+53,   hi:14+106, hinge:'hi', into:'-z' }, // 11 Guest Closet · N · right leaf (swings out)
 ];
 
 // ---------- windows (UPVC, sill 28 in, granite sill, grille on the outside) ----------
@@ -560,9 +560,9 @@ PILLARS.forEach(p=>{
 });
 
 // ---------- doors: openings cut in walls; add threshold + a swung leaf (double-click to open/close) ----------
-const doorMat=new THREE.MeshStandardMaterial({color:0xb0895a, roughness:.6, metalness:.03});
+const doorMat=new THREE.MeshStandardMaterial({color:0x7a4f2b, map:TEX_WOOD, roughness:.55, metalness:.03}); // wooden, distinct from walls
 const thMat=new THREE.MeshStandardMaterial({color:0xe3a648, roughness:.9});
-const SWING=0.72;   // ~41° open
+const SWING=1.52;   // ~87° — opens flush against the wall
 const doorObjs=[], doorLeaves=[];
 DOORS.forEach(d=>{
   if(d.passage) return;   // passages are plain wall openings — no leaf, threshold, or toggle
@@ -595,7 +595,7 @@ DOORS.forEach(d=>{
 });
 
 // ---------- openable cabinet/appliance doors (click to open) + unit labels ----------
-const unitObjs=[], unitLeaves=[], unitLabels=[];
+const unitObjs=[], unitLeaves=[], unitLabels=[], fans=[];
 function addCab(cx, cz, span, y0, y1, face, hinge, mat){
   const grp=new THREE.Group(); const h=y1-y0, yc=(y0+y1)/2; let leaf, openAngle;
   const hcol=new THREE.MeshStandardMaterial({color:0x222428,roughness:.4,metalness:.6});
@@ -641,7 +641,7 @@ const byMat   = new THREE.MeshStandardMaterial({color:0x9a958c, roughness:.95});
 const ironMat = new THREE.MeshStandardMaterial({color:0x14151a, roughness:.5,  metalness:.6});   // black iron
 const goldMat = new THREE.MeshStandardMaterial({color:0xc9a227, roughness:.35, metalness:.9});   // gold finials
 const wireMat = new THREE.MeshStandardMaterial({color:0xcdd2d8, roughness:.25, metalness:.95});  // razor wire
-const pillarMat=new THREE.MeshStandardMaterial({color:0xb8b2a6, roughness:.9});
+const pillarMat=new THREE.MeshStandardMaterial({color:0x1f2125, roughness:.6, metalness:.25}); // blackish gate pillars
 const mk=(w,h,d,mat,X,y,Z)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); o.position.set(wx(X),y,wz(Z)); scene.add(o); return o; };
 
 const GATE_W = 6*30.48;
@@ -652,6 +652,7 @@ addWallBox('WE', 0, 0, gz0, 0, BASE_H, byMat);
 addWallBox('WE', 0, gz1, 420, 0, BASE_H, byMat);
 addWallBox('NS', 0, 0, 260, 0, BASE_H, byMat);
 colliders.push({x0:-WALL_T/2,x1:WALL_T/2, z0:0, z1:420});
+colliders.push({x0:-WALL_T,x1:WALL_T, z0:gz0, z1:gz1});   // gate opening stays solid (can't walk out)
 colliders.push({x0:0,x1:260, z0:-WALL_T/2, z1:WALL_T/2});
 
 // 2 ft ornamental grille (bars + gold finials + rails) and 2 ft razor-wire coils on top
@@ -722,14 +723,31 @@ const GH=BASE_H;
   [pzN,pzS].forEach(cz=> mk(M(pxE-pxW+18),0.12,0.07, steel, cxM, M(H), cz));   // beams along x
   [pxW,pxE].forEach(cx=> mk(0.07,0.12,M(pzS-pzN+18), steel, cx, M(H), czM));   // beams along z
   for(let cz=pzN+14; cz<pzS; cz+=22) mk(M(pxE-pxW),0.035,0.05, steel, cxM, M(H+5), cz);  // slats
-  // hanging egg chair at the CENTRE of the pergola — at sitting height
-  const hx=cxM, hz=czM;
+  // toughened, slightly-opaque glass roof over the pergola
+  const proof=new THREE.MeshStandardMaterial({color:0xd7e2e6, roughness:.15, metalness:.1, transparent:true, opacity:.5});
+  mk(M(pxE-pxW+10),0.03,M(pzS-pzN+10), proof, cxM, M(H+9), czM);
+  // hanging egg chair — moved off the gate path (out of the gate's straight-in walkway)
+  const hx=150, hz=345;
   mk(0.012,M(180),0.012, steel, hx, 2.00, hz);                 // long cord up to the beam
   const shell=new THREE.Mesh(new THREE.SphereGeometry(M(42),20,16,0,Math.PI*1.5),new THREE.MeshStandardMaterial({color:0xddd6c8,roughness:.85}));
   shell.position.set(wx(hx),0.72,wz(hz)); shell.rotation.y=Math.PI*0.25; scene.add(shell);
   const cush=new THREE.Mesh(new THREE.CylinderGeometry(M(31),M(31),M(12),18),new THREE.MeshStandardMaterial({color:0x8d6f55,roughness:.9}));
   cush.position.set(wx(hx),0.46,wz(hz)); scene.add(cush);       // seat ~46 cm
   colliders.push({x0:hx-44,x1:hx+44,z0:hz-44,z1:hz+44});
+
+  // ---- laundry unit on the backyard EAST wall (north of the kitchen window/door), with washing machine ----
+  const lc=new THREE.MeshStandardMaterial({color:0x8f8a82, roughness:.85});
+  const lw=new THREE.MeshStandardMaterial({color:0xf2f3f4, roughness:.4, metalness:.2});
+  const lk=new THREE.MeshStandardMaterial({color:0x20242a, roughness:.2, metalness:.5});
+  const ltop=new THREE.MeshStandardMaterial({color:0xb7a78f, roughness:.7});
+  mk(M(58),0.84,M(56), lw, 232,0.45,168);                      // washing machine body (faces west)
+  { const d=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.20,0.05,24),lk); d.position.set(wx(202),0.55,wz(168)); d.rotation.z=Math.PI/2; scene.add(d); } // door ring
+  { const g=new THREE.Mesh(new THREE.SphereGeometry(0.15,16,12),new THREE.MeshStandardMaterial({color:0x2a3338,roughness:.1,metalness:.3,transparent:true,opacity:.55})); g.position.set(wx(202),0.55,wz(168)); scene.add(g); } // glass door
+  mk(M(42),0.03,M(42), lk,   232,0.83,168);                    // control panel
+  mk(M(60),0.06,M(58), ltop, 232,0.90,168);                    // counter / lid
+  mk(M(58),0.94,M(50), lc,   232,1.62,168);                    // tall laundry cabinet above
+  unitLabel('Laundry',206,1.6,168); unitLabel('Washer',206,0.6,168);
+  colliders.push({x0:203,x1:261,z0:140,z1:196});
 })();
 
 // ---------- master bathroom — styled to match the reference (matte-black fittings) ----------
@@ -834,6 +852,14 @@ const bfix=(x,y,z,w,h,d,m)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d
 const bcyl=(x,y,z,r,h,m,s)=>{ const o=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,s||24),m); o.position.set(wx(x),y,wz(z)); scene.add(o); return o; };
 const bsph=(x,y,z,r,m)=>{ const o=new THREE.Mesh(new THREE.SphereGeometry(r,18,14),m); o.position.set(wx(x),y,wz(z)); scene.add(o); return o; };
 const bpl =(x,y,z,c,i,d)=>{ const l=new THREE.PointLight(c,i,d); l.position.set(wx(x),y,wz(z)); scene.add(l); };
+// interior fit-out helpers: shelves (horizontal boards) + a hanging rail (rod)
+const SHELF=new THREE.MeshStandardMaterial({color:0xb7a78f, roughness:.7});
+const RAIL =new THREE.MeshStandardMaterial({color:0x9aa0a6, roughness:.3, metalness:.85});
+function shelves(x0,x1,z0,z1,ys,mat){ const cx=(x0+x1)/2, cz=(z0+z1)/2;
+  for(const y of ys) bfix(cx,y,cz, M(x1-x0-5),0.02,M(z1-z0-5), mat||SHELF); }
+function rail(cx,cz,len,axis,y){
+  const r=bcyl(cx,y,cz,0.014,M(len),RAIL,10);
+  r.rotation.set(axis==='z'?Math.PI/2:0, 0, axis==='x'?Math.PI/2:0); return r; }
 
 // ===== Bathroom · Bed 2 (BF: x860-1070, z300-500) =====
 (function(){
@@ -937,6 +963,8 @@ function eastWardrobe(z0,z1){
   bfix(xc,1.50,(z0+z1)/2, M(61),3.00,M(len), ww);            // carcass, 10 ft tall
   const n=Math.max(2,Math.round(len/55)), span=len/n;
   for(let i=0;i<n;i++) addCab(xf, z0+span*(i+0.5), span-2, 0.10,2.92, '-x', (i%2?'hi':'lo'), ww);
+  shelves(1210,1267,z0+3,z1-3,[0.55,1.05,1.95,2.45], SHELF);     // shelves
+  rail(1238,(z0+z1)/2, len-8, 'z', 1.82);                        // hanging rail
   unitLabel('Wardrobe',1200,1.75,(z0+z1)/2);
   colliders.push({x0:1207,x1:1269,z0,z1});
 }
@@ -956,10 +984,14 @@ function recliner(cx,cz){
 bfix(11,1.45,540,0.06,0.90,1.7,BED.tv);                      // theatre screen (west wall)
 bfix(340,0.012,540,1.9,0.02,2.2,BED.rug);                    // rug
 
+// Guest Closet (GC: x0-128 z660-800) — interior fit-out (visible when the double doors open)
+shelves(10,120,668,792,[0.42,1.86,2.42], SHELF);            // shelves
+rail(64,700,108,'x',1.74);                                  // hanging rail
+
 // ===== Kitchen (KT: x260-500 z0-420, open to hall on the east) =====
 (function buildKitchen(){
   const wood   = new THREE.MeshStandardMaterial({color:0x7a5f48, map:TEX_WOOD, roughness:.6, metalness:.03});
-  const upper  = new THREE.MeshStandardMaterial({color:0xd9d6d0, roughness:.6});
+  const upper  = new THREE.MeshStandardMaterial({color:0x8a6a4a, map:TEX_WOOD, roughness:.6});            // wooden storage
   const stone  = new THREE.MeshStandardMaterial({color:0xeae6de, roughness:.4, metalness:.05});
   const steel  = new THREE.MeshStandardMaterial({color:0xb8bcc0, roughness:.35, metalness:.85});
   const glassT = new THREE.MeshStandardMaterial({color:0x0e0f12, roughness:.2, metalness:.5});
@@ -985,6 +1017,7 @@ bfix(340,0.012,540,1.9,0.02,2.2,BED.rug);                    // rug
   bfix(465,1.62,Nz+6, 0.40,0.26,0.04, blk);                        // built-in microwave
   addCab(305,Nz+D-1,42,0.12,0.82,'+z','lo',wood);                  // clickable base doors
   addCab(350,Nz+D-1,42,0.12,0.82,'+z','hi',wood);
+  shelves(285,372,18,64,[0.30,0.56],wood);                         // interior shelves (north base)
 
   // ---- WEST counter (x 271..331, z 11..300) — sink sits under the west window (z ~196..313) ----
   bfix(Wx+30,0.42,155, M(D),0.84,M(289), wood);                    // base cabinets (full run)
@@ -998,10 +1031,14 @@ bfix(340,0.012,540,1.9,0.02,2.2,BED.rug);                    // rug
   bfix(Wx+8,1.15,270, 0.05,0.50,0.07, blk);                        // waterfall faucet column
   bfix(Wx+22,1.36,270,0.30,0.05,0.05, blk);
   bfix(Wx+34,1.30,270,0.05,0.14,0.05, blk);
-  addCab(Wx+D-1,130,55,0.06,0.82,'+x','lo',steel);                 // dishwasher front (clickable; no body box → no z-fighting)
-  bfix(Wx+D-3,0.78,130, 0.02,0.06,M(50), blk);                     // dishwasher control strip
+  addCab(Wx+D+2,130,55,0.06,0.82,'+x','lo',steel);                 // dishwasher front, proud of the cabinet face (no z-fighting)
+  bfix(Wx+D+3,0.78,130, 0.02,0.06,M(50), blk);                     // dishwasher control strip
   bcyl(Wx+28,1.00,52,0.09,0.16,steel,20); bcyl(Wx+28,1.16,52,0.07,0.16,glassT,18);  // mixie
-  addCab(Wx+D-1,200,50,0.12,0.82,'+x','hi',wood);                  // clickable base door
+  // built-in oven near the dishwasher (proud panel on the base run; no z-fighting)
+  bfix(Wx+D+1.5,0.50,200, 0.02,0.40,M(50), glassT);                // oven glass door
+  bfix(Wx+D+2,0.74,200, 0.02,0.05,M(42), steel);                   // oven handle
+  for(const dz of [-16,16]) bsph(Wx+D+2,0.86,200+dz,0.025,steel);  // control knobs
+  unitLabel('Oven',Wx+D+9,0.62,200);
 
   // ---- SOUTH wall left completely clear (storage + appliances removed per request) ----
 
@@ -1010,6 +1047,7 @@ bfix(340,0.012,540,1.9,0.02,2.2,BED.rug);                    // rug
   bfix(458,CT,220,   0.80,0.06,M(146), stone);                     // top with east overhang
   addCab(420,150,40,0.12,0.82,'-x','lo',wood);
   addCab(420,250,40,0.12,0.82,'-x','hi',wood);
+  shelves(422,478,130,290,[0.46], wood);                           // peninsula interior shelf
   for(const z of [165,220,275]){ bcyl(495,0.27,z,0.04,0.46,steel,12); bcyl(495,0.52,z,0.16,0.05,blk,18); } // stools
   unitLabel('Breakfast bar',458,1.05,205);
 
@@ -1055,19 +1093,52 @@ bfix(340,0.012,540,1.9,0.02,2.2,BED.rug);                    // rug
   colliders.push({x0:511,x1:724,z0:446,z1:531});
   colliders.push({x0:590,x1:740,z0:Sz-44,z1:Sz});             // media console
 
-  // --- bookshelf + bar from the pillar (x596) to the guest-room wall (x500), behind the sofa, facing north ---
+  // --- divider from the pillar (x596) to the guest-room wall (x500): bar+bookshelf to the hall, storage to the kitchen ---
   const bw =new THREE.MeshStandardMaterial({color:0x5e4632, map:TEX_WOOD, roughness:.6});
   const bst=new THREE.MeshStandardMaterial({color:0x2a2c30, roughness:.4, metalness:.35});
   const gls=new THREE.MeshStandardMaterial({color:0xbcd6e0, roughness:.1, metalness:.2, transparent:true, opacity:.4});
-  bfix(548,0.45,428, M(96),0.90,M(32), bw);                    // bar base cabinet
-  bfix(548,0.93,425, M(100),0.05,M(38), bst);                  // bar counter top (overhangs north)
-  bfix(548,1.50,414, M(96),1.20,M(6), bw);                     // tall back panel (y .90 → 2.10)
-  for(const y of [1.14,1.46,1.78,2.06]) bfix(548,y,420, M(92),0.03,M(20), bw);  // shelves
-  for(let i=0;i<6;i++) bfix(509+i*15,1.30,420, 0.05,0.24,0.15, [bw,bst][i%2]);  // books (bookshelf, west)
-  for(let i=0;i<4;i++) bcyl(556+i*12,1.93,420,0.035,0.20,gls,10);               // bottles (bar, east)
-  for(const x of [520,576]){ bcyl(x,0.27,398,0.04,0.46,bst,12); bcyl(x,0.52,398,0.16,0.05,bw,16); } // bar stools
-  unitLabel('Bookshelf',518,1.55,410); unitLabel('Bar',572,1.05,398);
+  const FT=30.48;
+  // LOW storage (floor → sofa/counter height ~0.90): opens to the KITCHEN side (north, z410)
+  bfix(548,0.45,428, M(96),0.90,M(34), bw);
+  addCab(524,410,44,0.10,0.84,'-z','lo',bw); addCab(572,410,44,0.10,0.84,'-z','hi',bw);
+  shelves(503,593,413,443,[0.46],bw);
+  unitLabel('Storage · kitchen',548,0.6,406);
+  // bar counter top (hall side), at ~sofa height
+  bfix(548,0.93,432, M(100),0.06,M(44), bst);                  // overhangs into the hall
+  // BOOKSHELF + bar display, 0.95 → 7 ft: open to the HALL (south)
+  bfix(548,1.55,413, M(96),1.18,M(8), bw);                     // back panel (north)
+  for(const y of [1.12,1.45,1.78,2.10]) bfix(548,y,429, M(92),0.03,M(30), bw);  // open shelves (face hall)
+  for(let i=0;i<7;i++) bfix(509+i*13,1.28,433, 0.05,0.24,0.16, [bw,bst][i%2]);  // books
+  for(let i=0;i<4;i++) bcyl(560+i*11,1.94,433,0.032,0.20,gls,10);               // bottles / decor
+  unitLabel('Bar / Bookshelf',548,1.6,452);
+  // UPPER storage, 7 ft → 10 ft: opens to the KITCHEN side (north)
+  const u0=7*FT/100, u1=10*FT/100;                             // 2.134 → 3.048 m
+  bfix(548,(u0+u1)/2,420, M(96),(u1-u0),M(32), bw);
+  addCab(524,410,44,u0+0.04,u1-0.04,'-z','lo',bw); addCab(572,410,44,u0+0.04,u1-0.04,'-z','hi',bw);
+  shelves(503,593,413,443,[(u0+u1)/2],bw);
   colliders.push({x0:500,x1:596,z0:410,z1:446});
+
+  // --- fridge on the dining NORTH wall, west end (close to the kitchen), faces south ---
+  const fridgeM=new THREE.MeshStandardMaterial({color:0xc2c6ca, roughness:.3, metalness:.8});
+  bfix(540,1.00,44, M(72),2.00,M(64), fridgeM);                // body (front at z76)
+  addCab(522,78,34,0.12,1.96,'+z','lo',fridgeM);               // clickable doors (proud of body)
+  addCab(558,78,34,0.12,1.96,'+z','hi',fridgeM);
+  unitLabel('Fridge',540,1.4,82);
+  colliders.push({x0:504,x1:576,z0:11,z1:80});
+
+  // --- pooja (mandir) unit on the dining EAST wall, faces west ---
+  const gold =new THREE.MeshStandardMaterial({color:0xc9a227, roughness:.35, metalness:.9});
+  const marb =new THREE.MeshStandardMaterial({color:0xeae6de, roughness:.4, metalness:.05});
+  const glow =new THREE.MeshStandardMaterial({color:0xffe6b0, emissive:0xffb45a, emissiveIntensity:1.2, roughness:.6});
+  bfix(842,0.42,200, M(36),0.84,M(80), bw);                    // base cabinet
+  bfix(840,0.88,200, M(40),0.06,M(78), marb);                  // marble platform
+  bfix(852,1.62,200, M(16),1.48,M(78), bw);                    // back panel (east)
+  for(const z of [163,237]) bcyl(840,1.6,z,0.04,1.40,gold,12); // corner columns
+  bfix(841,2.40,200, M(42),0.12,M(86), bw);                    // canopy
+  bsph(840,2.58,200,0.17,gold);                                // dome
+  bcyl(833,0.94,200,0.05,0.07,glow,14); bpl(835,1.05,200,0xffb45a,.5,2.4);  // diya + lamp glow
+  unitLabel('Pooja',822,1.2,200);
+  colliders.push({x0:824,x1:860,z0:158,z1:242});
 })();
 
 // direction markers — positioned in world space so they track the model as it rotates.
@@ -1333,6 +1404,113 @@ function walkStep(){
   drawMini(xcm, zcm, bearing);
 }
 
+// ============ electrical · lighting · facade layer ============
+(function MEP(){
+  const CEIL=M(WALL_H);
+  const litM  =new THREE.MeshStandardMaterial({color:0xfff6e2, emissive:0xffe6b8, emissiveIntensity:1.5, roughness:.5});
+  const coveM =new THREE.MeshStandardMaterial({color:0x2e2e2e, emissive:0xffcf94, emissiveIntensity:1.1, roughness:.6});
+  const acM   =new THREE.MeshStandardMaterial({color:0xf4f5f6, roughness:.5});
+  const acV   =new THREE.MeshStandardMaterial({color:0x2b2e33, roughness:.6});
+  const fanM  =new THREE.MeshStandardMaterial({color:0x3a3d42, roughness:.5, metalness:.4});
+  const bladeM=new THREE.MeshStandardMaterial({color:0x6b5743, map:TEX_WOOD, roughness:.6});
+  const swM   =new THREE.MeshStandardMaterial({color:0xf0efe9, roughness:.5});
+
+  const downlight=(x,z)=> bcyl(x, CEIL-0.04, z, 0.07,0.02, litM,16);
+  function fan(x,z){
+    bcyl(x,CEIL-0.16,z,0.02,0.30,fanM,8); bcyl(x,CEIL-0.34,z,0.10,0.08,fanM,16);
+    const g=new THREE.Group(); g.position.set(wx(x),CEIL-0.34,wz(z)); scene.add(g);
+    for(let i=0;i<4;i++){ const b=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.012,0.13),bladeM); b.position.x=0.34;
+      const bg=new THREE.Group(); bg.add(b); bg.rotation.y=i*Math.PI/2; g.add(bg); }
+    fans.push(g);
+  }
+  const ac=(x,z)=>{ bfix(x,CEIL-0.42,z, 0.92,0.30,0.20, acM); bfix(x,CEIL-0.55,z, 0.86,0.05,0.16, acV); };
+  const swR  =new THREE.MeshStandardMaterial({color:0x4a4d52, roughness:.5});
+  const sockH=new THREE.MeshStandardMaterial({color:0x3a3d42, roughness:.6});
+  function board(x,z,orient,fs){              // switchboard with 3 rocker switches, proud of the wall
+    if(orient==='NS'){ bfix(x,1.25,z, 0.17,0.21,0.03, swM);
+      for(let i=-1;i<2;i++) bfix(x+i*0.05,1.25,z+fs*0.022, 0.04,0.07,0.012, swR); }
+    else { bfix(x,1.25,z, 0.03,0.21,0.17, swM);
+      for(let i=-1;i<2;i++) bfix(x+fs*0.022,1.25,z+i*0.05, 0.012,0.07,0.04, swR); }
+    unitLabel('Switches', x, 1.55, z);
+  }
+  function socket(x,z,orient,fs){             // power point, low on the wall
+    if(orient==='NS'){ bfix(x,0.32,z, 0.11,0.12,0.03, swM); bfix(x,0.32,z+fs*0.02, 0.06,0.06,0.012, sockH); }
+    else { bfix(x,0.32,z, 0.03,0.12,0.11, swM); bfix(x+fs*0.02,0.32,z, 0.012,0.06,0.06, sockH); }
+    unitLabel('Power point', x, 0.52, z);
+  }
+  function cove4(x0,x1,z0,z1){ const y=CEIL-0.16, t=0.05, mx=(x0+x1)/2, mz=(z0+z1)/2;
+    bfix(mx,y,z0+10, M(x1-x0-30),0.04,t, coveM); bfix(mx,y,z1-10, M(x1-x0-30),0.04,t, coveM);
+    bfix(x0+10,y,mz, t,0.04,M(z1-z0-30), coveM); bfix(x1-10,y,mz, t,0.04,M(z1-z0-30), coveM); }
+
+  // per-room: profile cove + downlight grid + fans
+  ROOMS.forEach(r=>{ if(r.tbd||r.outdoor) return;
+    const cx=r.x+r.w/2, cz=r.z+r.d/2, bath=/Bath/.test(r.name);
+    cove4(r.x,r.x+r.w,r.z,r.z+r.d);
+    for(let gx=r.x+95; gx<r.x+r.w-70; gx+=170) for(let gz=r.z+95; gz<r.z+r.d-70; gz+=190) downlight(gx,gz);
+    if(!bath && /Bedroom|Master|Hall|Theatre/.test(r.name)) fan(cx,cz);
+  });
+  // wall-split ACs (bedrooms, hall, theatre), high on a wall
+  ac(1000,16);  ac(1000,786);  ac(846,160);  ac(250,432);
+  // switchboards beside every door (latch side, ~1.25 m) + power points in every room
+  DOORS.forEach(d=>{ if(d.passage) return; const off=WALL_T/2+1.5;
+    if(d.orient==='NS'){ const fs=(d.into==='+z')?1:-1; board(d.hi+18, d.coord+fs*off, 'NS', fs); }
+    else               { const fs=(d.into==='+x')?1:-1; board(d.coord+fs*off, d.hi+18, 'WE', fs); } });
+  ROOMS.forEach(r=>{ if(r.tbd||r.outdoor) return; const off=WALL_T/2+1.5;
+    socket(r.x+55, r.z+off, 'NS', +1);              // north-wall power point
+    socket(r.x+r.w-55, r.z+r.d-off, 'NS', -1); });  // south-wall power point
+
+  // ---- exterior facade: stacked-stone cladding (cream) with reddish highlight bands ----
+  function ledgerTex(base,mortar){ const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
+    x.fillStyle=base; x.fillRect(0,0,256,256);
+    const id=x.getImageData(0,0,256,256),dd=id.data; for(let i=0;i<dd.length;i+=4){const n=(Math.random()-.5)*24; dd[i]+=n;dd[i+1]+=n;dd[i+2]+=n;} x.putImageData(id,0,0);
+    x.strokeStyle=mortar; x.lineWidth=2;
+    for(let y=0;y<=256;y+=16){ x.beginPath();x.moveTo(0,y);x.lineTo(256,y);x.stroke();
+      for(let vx=((y/16)%2?0:32); vx<256; vx+=64){ x.beginPath();x.moveTo(vx,y);x.lineTo(vx,y+16);x.stroke(); } }
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.encoding=THREE.sRGBEncoding; return t; }
+  const creamTex=ledgerTex('#cdbfa0','#9a8c70'); creamTex.repeat.set(4,10);
+  const bandTex =ledgerTex('#7a4636','#4a2920'); bandTex.repeat.set(4,2);
+  const ELEV =new THREE.MeshStandardMaterial({color:0xcabfa2, map:creamTex, roughness:.82, metalness:.04});
+  const BAND =new THREE.MeshStandardMaterial({color:0x7a4636, map:bandTex,  roughness:.8,  metalness:.04});
+  const lampM=new THREE.MeshStandardMaterial({color:0x202225, roughness:.5, metalness:.5});
+  const lensM=new THREE.MeshStandardMaterial({color:0xffe7bf, emissive:0xffcf8a, emissiveIntensity:1.7, roughness:.5});
+  const washM=new THREE.MeshStandardMaterial({color:0xffd9a0, emissive:0xffc070, emissiveIntensity:.5, roughness:.7, transparent:true, opacity:.45});
+  const EXT=[
+    {orient:'NS',coord:0,   s:260,e:1280,out:-1},   // north facade
+    {orient:'NS',coord:800, s:0,  e:1280,out:+1},   // south facade
+    {orient:'WE',coord:0,   s:420,e:800, out:-1},   // west facade (house, below the compound wall)
+    {orient:'WE',coord:1280,s:0,  e:800, out:+1},   // east facade
+  ];
+  const spans=seg=>{ const sp=[];
+    DOORS.forEach(d=>{ if(!d.passage&&d.orient===seg.orient&&Math.abs(d.coord-seg.coord)<2&&d.hi>seg.s&&d.lo<seg.e) sp.push([d.lo,d.hi]); });
+    WIN.forEach(w=>{ if(w.orient===seg.orient&&Math.abs(w.coord-seg.coord)<2&&w.hi>seg.s&&w.lo<seg.e) sp.push([w.lo,w.hi]); });
+    return sp; };
+  const FT5=5*30.48;
+  EXT.forEach(seg=>{ const sp=spans(seg), fo=WALL_T/2+1.8;
+    let segs=[[seg.s,seg.e]];
+    sp.forEach(([a,b])=>{ const out=[]; segs.forEach(([x,y])=>{ if(b<=x||a>=y) out.push([x,y]); else { if(a>x)out.push([x,a]); if(b<y)out.push([b,y]); } }); segs=out; });
+    segs.forEach(([a,b])=>{ if(b-a<3) return; const len=b-a, mid=(a+b)/2;
+      if(seg.orient==='NS'){ const zc=seg.coord+seg.out*fo, zb=seg.coord+seg.out*(fo+0.6);
+        bfix(mid, M(WALL_H)/2, zc, M(len),M(WALL_H),0.03, ELEV);
+        bfix(mid, M(99),  zb, M(len),M(42),0.03, BAND);    // lower highlight band
+        bfix(mid, M(286), zb, M(len),M(34),0.03, BAND);    // upper band
+      } else { const xc=seg.coord+seg.out*fo, xb=seg.coord+seg.out*(fo+0.6);
+        bfix(xc, M(WALL_H)/2, mid, 0.03,M(WALL_H),M(len), ELEV);
+        bfix(xb, M(99),  mid, 0.03,M(42),M(len), BAND);
+        bfix(xb, M(286), mid, 0.03,M(34),M(len), BAND);
+      }
+    });
+    for(let t=seg.s+FT5/2; t<seg.e-20; t+=FT5){
+      if(sp.some(([a,b])=> t>a-30 && t<b+30)) continue;
+      const body=seg.coord+seg.out*(WALL_T/2+5), lens=seg.coord+seg.out*(WALL_T/2+8), wash=seg.coord+seg.out*(WALL_T/2+2);
+      if(seg.orient==='NS'){
+        bfix(t,M(121.92),body,0.12,0.18,0.07,lampM); bfix(t,M(121.92),lens,0.08,0.12,0.02,lensM); bfix(t,M(82),wash,0.10,0.74,0.015,washM);
+      } else {
+        bfix(body,M(121.92),t,0.07,0.18,0.12,lampM); bfix(lens,M(121.92),t,0.02,0.12,0.08,lensM); bfix(wash,M(82),t,0.015,0.74,0.10,washM);
+      }
+    }
+  });
+})();
+
 // ---------- shadows on everything (transparent meshes don't cast) ----------
 scene.traverse(o=>{ if(o.isMesh){ o.castShadow = !(o.material && o.material.transparent); o.receiveShadow = true; } });
 
@@ -1343,6 +1521,7 @@ addEventListener('resize',()=>{
 (function animate(){ requestAnimationFrame(animate);
   doorObjs.forEach(o=>{ o.grp.rotation.y += (o.target - o.grp.rotation.y)*0.18; });
   unitObjs.forEach(o=>{ o.grp.rotation.y += (o.target - o.grp.rotation.y)*0.18; });
+  for(const f of fans) f.rotation.y += 0.06;
   for(const l of unitLabels){
     const cx=camera.position.x-l.position.x, cz=camera.position.z-l.position.z;     // camera proximity (walk)
     const tx=controls.target.x-l.position.x, tz=controls.target.z-l.position.z;     // look-target proximity (zoom-in)
