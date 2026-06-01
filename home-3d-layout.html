@@ -255,6 +255,17 @@ const DOORS = [
   { orient:'WE', coord:378.08, lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 8 Guest Bathroom · E · opens inward (shower removed, toilet on west wall)
   { orient:'WE', coord:500,    lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 9 Hall → guest entry, directly in front of bathroom door (#8)
   { orient:'NS', coord:660,    lo:378.08, hi:500,   passage:true },          // open passage: guest bedroom <-> entry
+  { orient:'NS', coord:660,    lo:14,      hi:14+DW,  hinge:'lo', into:'+z' }, // 10 Guest Closet · N · opens into guest bedroom
+];
+
+// ---------- windows (UPVC, sill 28 in, granite sill, grille on the outside) ----------
+const IN = i => i*2.54;                                  // inches → cm
+const WSILL = IN(28), WHEAD = IN(28)+IN(52);             // 28" sill, 52" tall
+const WIN = [
+  { orient:'WE', coord:1280, lo:12,          hi:12+IN(46),      sill:WSILL, head:WHEAD, ext:'+x' }, // Master bed · E wall · 0 ft from N
+  { orient:'WE', coord:1280, lo:789-IN(46),  hi:789,            sill:WSILL, head:WHEAD, ext:'+x' }, // Bedroom 2 · E wall · 0 ft from S
+  { orient:'NS', coord:420,  lo:106.68,      hi:106.68+IN(48),  sill:WSILL, head:WHEAD, ext:'-z' }, // Guest bed · N wall · 0 ft from door
+  { orient:'WE', coord:260,  lo:313.32-IN(46), hi:313.32,       sill:WSILL, head:WHEAD, ext:'-x' }, // Kitchen sink · W wall · 0 ft from door
 ];
 
 // bounding box for centring
@@ -386,20 +397,67 @@ function addWallBox(orient, perpCm, sCm, eCm, y0Cm, y1Cm, mat){
     else              colliders.push({x0:perpCm-WALL_T/2, x1:perpCm+WALL_T/2, z0:sCm, z1:eCm});
   }
 }
-function buildWallRun(orient, perpCm, runS, runE, mat, intervals){
-  intervals = intervals.map(iv=>[Math.max(runS,iv[0]), Math.min(runE,iv[1])])
-                       .filter(iv=>iv[1]>iv[0]).sort((p,q)=>p[0]-q[0]);
+function buildWallRun(orient, perpCm, runS, runE, mat, openings){
+  openings = openings.map(o=>({lo:Math.max(runS,o.lo), hi:Math.min(runE,o.hi), kind:o.kind, sill:o.sill, head:o.head}))
+                     .filter(o=>o.hi>o.lo).sort((a,b)=>a.lo-b.lo);
   let cur=runS;
-  for(const [a,b] of intervals){
-    if(a>cur) addWallBox(orient,perpCm,cur,a,0,WALL_H,mat);
-    addWallBox(orient,perpCm,a,b,DH,WALL_H,mat);   // lintel above the doorway
-    cur=b;
+  for(const o of openings){
+    if(o.lo>cur) addWallBox(orient,perpCm,cur,o.lo,0,WALL_H,mat);
+    if(o.kind==='win'){
+      addWallBox(orient,perpCm,o.lo,o.hi,0,o.sill,mat);        // parapet below the sill
+      addWallBox(orient,perpCm,o.lo,o.hi,o.head,WALL_H,mat);   // lintel above the head
+    } else {
+      addWallBox(orient,perpCm,o.lo,o.hi,DH,WALL_H,mat);       // lintel above the doorway
+    }
+    cur=o.hi;
   }
   if(cur<runE) addWallBox(orient,perpCm,cur,runE,0,WALL_H,mat);
 }
 
 const wallMat = new THREE.MeshStandardMaterial({ color:0xc4c0b9, map:TEX_WALL, roughness:.92, metalness:.0, transparent:true, opacity:1 });
 wallMats.push(wallMat);
+
+// ---------- window assembly: UPVC frame + glass + granite sill + exterior grille ----------
+const WIN_UPVC =new THREE.MeshStandardMaterial({color:0xeef0f2, roughness:.55, metalness:.05});
+const WIN_GLASS=new THREE.MeshStandardMaterial({color:0xbcd6e0, roughness:.08, metalness:.1, transparent:true, opacity:.30});
+const WIN_GRAN =new THREE.MeshStandardMaterial({color:0x35383d, roughness:.4,  metalness:.18});   // granite sill
+const WIN_GRL  =new THREE.MeshStandardMaterial({color:0x26282c, roughness:.5,  metalness:.6});    // exterior grille
+function buildWindow(w){
+  const {orient,coord,lo,hi,sill,head,ext}=w;
+  const L=hi-lo, Hh=head-sill, mid=(lo+hi)/2, ym=M((sill+head)/2), t=M(WALL_T);
+  const dirE=(ext==='+x'||ext==='+z')?1:-1;
+  const box=(sx,sy,sz,m)=>new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);
+  if(orient==='WE'){                       // wall runs along z; perp = x = coord
+    const X=wx(coord);
+    let o;
+    o=box(t,0.06,M(L),WIN_UPVC); o.position.set(X,M(sill),wz(mid)); scene.add(o);
+    o=box(t,0.06,M(L),WIN_UPVC); o.position.set(X,M(head),wz(mid)); scene.add(o);
+    o=box(t,M(Hh),0.06,WIN_UPVC); o.position.set(X,ym,wz(lo)); scene.add(o);
+    o=box(t,M(Hh),0.06,WIN_UPVC); o.position.set(X,ym,wz(hi)); scene.add(o);
+    o=box(t,M(Hh),0.05,WIN_UPVC); o.position.set(X,ym,wz(mid)); scene.add(o);          // mullion
+    o=box(0.02,M(Hh)-0.10,M(L)-0.10,WIN_GLASS); o.position.set(X,ym,wz(mid)); scene.add(o);
+    o=box(0.22,0.05,M(L)+0.10,WIN_GRAN); o.position.set(X-dirE*0.07,M(sill)-0.03,wz(mid)); scene.add(o); // granite sill (inward)
+    const gx=X+dirE*(t/2+0.03);
+    for(let z=lo+10; z<hi-2; z+=15){ o=box(0.02,M(Hh)-0.08,0.02,WIN_GRL); o.position.set(gx,ym,wz(z)); scene.add(o); }
+    for(let y=sill+12; y<head-2; y+=24){ o=box(0.02,0.02,M(L),WIN_GRL); o.position.set(gx,M(y),wz(mid)); scene.add(o); }
+    colliders.push({x0:coord-WALL_T/2,x1:coord+WALL_T/2,z0:lo,z1:hi});
+  } else {                                 // wall runs along x; perp = z = coord
+    const Z=wz(coord);
+    let o;
+    o=box(M(L),0.06,t,WIN_UPVC); o.position.set(wx(mid),M(sill),Z); scene.add(o);
+    o=box(M(L),0.06,t,WIN_UPVC); o.position.set(wx(mid),M(head),Z); scene.add(o);
+    o=box(0.06,M(Hh),t,WIN_UPVC); o.position.set(wx(lo),ym,Z); scene.add(o);
+    o=box(0.06,M(Hh),t,WIN_UPVC); o.position.set(wx(hi),ym,Z); scene.add(o);
+    o=box(0.05,M(Hh),t,WIN_UPVC); o.position.set(wx(mid),ym,Z); scene.add(o);          // mullion
+    o=box(M(L)-0.10,M(Hh)-0.10,0.02,WIN_GLASS); o.position.set(wx(mid),ym,Z); scene.add(o);
+    o=box(M(L)+0.10,0.05,0.22,WIN_GRAN); o.position.set(wx(mid),M(sill)-0.03,Z-dirE*0.07); scene.add(o);
+    const gz=Z+dirE*(t/2+0.03);
+    for(let x=lo+10; x<hi-2; x+=15){ o=box(0.02,M(Hh)-0.08,0.02,WIN_GRL); o.position.set(wx(x),ym,gz); scene.add(o); }
+    for(let y=sill+12; y<head-2; y+=24){ o=box(M(L),0.02,0.02,WIN_GRL); o.position.set(wx(mid),M(y),gz); scene.add(o); }
+    colliders.push({x0:lo,x1:hi,z0:coord-WALL_T/2,z1:coord+WALL_T/2});
+  }
+}
+
 ROOMS.forEach(r=>{
   const fx = wx(r.x + r.w/2), fz = wz(r.z + r.d/2);
   const fw = M(r.w), fd = M(r.d);
@@ -437,9 +495,11 @@ ROOMS.forEach(r=>{
     ['N','S','W','E'].forEach(side=>{
       if(open.includes(side)) return;
       const sd=sidesDef[side];
-      const ivs=DOORS.filter(dr=>dr.orient===sd.orient && Math.abs(dr.coord-sd.boundary)<=1.5
-                  && dr.hi>sd.s+1 && dr.lo<sd.e-1).map(dr=>[dr.lo,dr.hi]);
-      buildWallRun(sd.orient, sd.boundary, sd.s, sd.e, wallMat, ivs);   // wall centred on the boundary
+      const dIvs=DOORS.filter(dr=>dr.orient===sd.orient && Math.abs(dr.coord-sd.boundary)<=1.5
+                  && dr.hi>sd.s+1 && dr.lo<sd.e-1).map(dr=>({lo:dr.lo,hi:dr.hi,kind:'door'}));
+      const wIvs=WIN.filter(wn=>wn.orient===sd.orient && Math.abs(wn.coord-sd.boundary)<=1.5
+                  && wn.hi>sd.s+1 && wn.lo<sd.e-1).map(wn=>({lo:wn.lo,hi:wn.hi,kind:'win',sill:wn.sill,head:wn.head}));
+      buildWallRun(sd.orient, sd.boundary, sd.s, sd.e, wallMat, dIvs.concat(wIvs));   // wall centred on the boundary
     });
   }
   if(!r.tbd){ definedArea += (r.w*r.d)/10000; definedCount++; }
@@ -457,6 +517,7 @@ ROOMS.forEach(r=>{
 });
 
 // ---------- custom wall segments ----------
+WIN.forEach(buildWindow);
 EXTRA_WALLS.forEach(w=>{
   const mat=new THREE.MeshStandardMaterial({color:w.color, roughness:.85, metalness:.02, transparent:true, opacity:1});
   const m=new THREE.Mesh(new THREE.BoxGeometry(M(w.lx), M(WALL_H), M(w.lz)), mat);
@@ -842,6 +903,19 @@ nightstand(1005,785); nightstand(1215,785);
 bfix(1110,0.012,680,2.6,0.02,1.9,BED.rug);
 bfix(1135,1.30,512,1.30,0.74,0.05,BED.tv);                   // wall TV (north wall, east of bathroom door)
 
+// 10 ft tall wardrobes on the east wall (2 ft deep), with clickable doors
+function eastWardrobe(z0,z1){
+  const ww=new THREE.MeshStandardMaterial({color:0x6b5743, map:TEX_WOOD, roughness:.55, metalness:.04});
+  const xc=1238, xf=1207.6, len=z1-z0;
+  bfix(xc,1.50,(z0+z1)/2, M(61),3.00,M(len), ww);            // carcass, 10 ft tall
+  const n=Math.max(2,Math.round(len/55)), span=len/n;
+  for(let i=0;i<n;i++) addCab(xf, z0+span*(i+0.5), span-2, 0.10,2.92, '-x', (i%2?'hi':'lo'), ww);
+  unitLabel('Wardrobe',1200,1.75,(z0+z1)/2);
+  colliders.push({x0:1207,x1:1269,z0,z1});
+}
+eastWardrobe(129,289);   // master: window → south wall
+eastWardrobe(511,672);   // bedroom 2: north wall → window
+
 // Guest Bed + Theatre (x0-500 z420-660) — headboard on EAST wall, theatre screen on west
 buildBed(385,540,200,150,'E');
 bfix(11,1.45,540,0.06,0.90,1.7,BED.tv);                      // theatre screen (west wall)
@@ -877,37 +951,24 @@ bfix(360,0.012,540,1.9,0.02,2.0,BED.rug);
   addCab(305,Nz+D-1,42,0.12,0.82,'+z','lo',wood);                  // clickable base doors
   addCab(350,Nz+D-1,42,0.12,0.82,'+z','hi',wood);
 
-  // ---- WEST counter (x 271..331), z 11..300 ----
-  bfix(Wx+30,0.42,155, M(D),0.84,M(289), wood);
-  bfix(Wx+30,CT,155,   M(D+4),0.06,M(293), stone);
-  bfix(Wx+2,(CT+UB)/2,155, 0.02,M((UB-CT)*100),M(289), tileM);
-  bfix(Wx+18,(UB+UT)/2,190, M(35),M((UT-UB)*100),M(220), upper);
-  bfix(Wx+30,UB-0.01,190, M(30),0.015,M(216), led);
-  bfix(Wx+30,0.84,120, 0.42,0.18,0.42, blk);                       // sink basin
-  bfix(Wx+30,0.905,120,0.50,0.02,0.50, stone);
-  bfix(Wx+8,1.15,120, 0.05,0.50,0.07, blk);                        // waterfall faucet
-  bfix(Wx+22,1.36,120,0.30,0.05,0.05, blk);
-  bfix(Wx+34,1.30,120,0.05,0.14,0.05, blk);
-  bfix(Wx+30,0.42,230, M(58),0.84,M(58), steel);                   // dishwasher body
-  addCab(Wx+D-1,230,55,0.06,0.82,'+x','lo',steel);                 // dishwasher door (clickable)
+  // ---- WEST counter (x 271..331, z 11..300) — sink sits under the west window (z ~196..313) ----
+  bfix(Wx+30,0.42,155, M(D),0.84,M(289), wood);                    // base cabinets (full run)
+  bfix(Wx+30,CT,155,   M(D+4),0.06,M(293), stone);                 // quartz top
+  bfix(Wx+2,(CT+UB)/2,103, 0.02,M((UB-CT)*100),M(185), tileM);     // backsplash (north of window only)
+  bfix(Wx+18,(UB+UT)/2,105, M(35),M((UT-UB)*100),M(170), upper);   // uppers (north of window only)
+  bfix(Wx+30,UB-0.01,105, M(30),0.015,M(166), led);
+  // sink centred below the window (z ~255)
+  bfix(Wx+30,0.84,255, 0.42,0.18,0.42, blk);                       // basin
+  bfix(Wx+30,0.905,255,0.50,0.02,0.50, stone);                     // rim
+  bfix(Wx+8,1.15,255, 0.05,0.50,0.07, blk);                        // waterfall faucet column
+  bfix(Wx+22,1.36,255,0.30,0.05,0.05, blk);
+  bfix(Wx+34,1.30,255,0.05,0.14,0.05, blk);
+  bfix(Wx+30,0.42,130, M(58),0.84,M(58), steel);                   // dishwasher (moved north)
+  addCab(Wx+D-1,130,55,0.06,0.82,'+x','lo',steel);                 // dishwasher door (clickable)
   bcyl(Wx+28,1.00,52,0.09,0.16,steel,20); bcyl(Wx+28,1.16,52,0.07,0.16,glassT,18);  // mixie
-  addCab(Wx+D-1,75,50,0.12,0.82,'+x','lo',wood);                   // clickable base door
+  addCab(Wx+D-1,200,50,0.12,0.82,'+x','hi',wood);                  // clickable base door
 
-  // ---- SOUTH-side STORAGE bay between two pillars (south WALL itself left clear) ----
-  const Sz=409, td=60, cz=Sz-td/2, TH=3.00;
-  bfix(292,M(WALL_H)/2,392, M(28),M(WALL_H),M(28), pil); colliders.push({x0:278,x1:306,z0:378,z1:406});
-  bfix(500,M(WALL_H)/2,392, M(28),M(WALL_H),M(28), pil); colliders.push({x0:486,x1:514,z0:378,z1:406});
-  bfix(336,TH/2,cz, 0.72,TH,M(td), steel);                         // fridge
-  addCab(318,Sz-td,34,0.12,2.88,'-z','lo',steel);
-  addCab(354,Sz-td,34,0.12,2.88,'-z','hi',steel);
-  unitLabel('Fridge',336,1.7,Sz-td-3);
-  bfix(406,TH/2,cz, 0.60,TH,M(td), upper);                         // pantry
-  addCab(406,Sz-td,58,0.12,2.88,'-z','lo',wood);
-  unitLabel('Pantry',406,1.7,Sz-td-3);
-  bfix(466,TH/2,cz, 0.52,TH,M(td), steel);                         // oven + MW tower
-  bfix(466,1.55,Sz-td-1, 0.42,0.32,0.02, blk);                     // microwave
-  addCab(466,Sz-td,48,0.85,1.30,'-z','lo',glassT);                 // oven (OTG) door
-  unitLabel('Oven / MW',466,1.95,Sz-td-3);
+  // ---- SOUTH wall left completely clear (storage + appliances removed per request) ----
 
   // ---- breakfast peninsula (island bar near the open east side) ----
   bfix(450,0.42,220, 0.60,0.84,M(140), wood);                      // base
@@ -919,12 +980,11 @@ bfix(360,0.012,540,1.9,0.02,2.0,BED.rug);
 
   // unit labels
   unitLabel('Hob',400,1.05,76); unitLabel('Chimney',400,1.78,Nz+44);
-  unitLabel('Sink',340,1.0,120); unitLabel('Dishwasher',345,0.62,232); unitLabel('Mixer',336,1.12,52);
+  unitLabel('Sink',340,1.0,255); unitLabel('Dishwasher',345,0.62,130); unitLabel('Mixer',336,1.12,52);
 
   // colliders
   colliders.push({x0:271,x1:490,z0:11,z1:71});       // north counter
   colliders.push({x0:271,x1:331,z0:11,z1:300});      // west counter
-  colliders.push({x0:300,x1:492,z0:349,z1:409});     // storage bay
   colliders.push({x0:420,x1:500,z0:150,z1:290});     // peninsula
 })();
 
