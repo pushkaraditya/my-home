@@ -243,16 +243,16 @@ const PILLARS = [
 
 // Doors: 3.5 ft wide, 6.5 ft tall. orient 'NS' = wall runs along X at fixed z=coord;
 // 'WE' = wall runs along Z at fixed x=coord. lo/hi = opening interval (cm) along the run.
-const DW = 3.5*30.48, DH = 6.5*30.48;       // door width / height in cm (106.7 / 198.1)
+const DW = 3*30.48, DWB = 2.5*30.48, DH = 6.5*30.48;   // 3 ft doors, 2.5 ft bathroom doors, 6.5 ft tall (cm)
 const DOORS = [
   { orient:'NS', coord:800, lo:860-DW,  hi:860,     hinge:'hi', into:'-z' }, // 1 Hall · S · against Bedroom 2
   { orient:'WE', coord:860, lo:0,       hi:DW,      hinge:'lo', into:'+x' }, // 2 Master Bedroom · W · at N
-  { orient:'NS', coord:300, lo:1070,    hi:1070+DW, hinge:'lo', into:'+z' }, // 3 Master Bathroom · N · from W
+  { orient:'NS', coord:300, lo:1070,    hi:1070+DWB,hinge:'lo', into:'+z' }, // 3 Master Bathroom · N · from W (2.5 ft)
   { orient:'WE', coord:860, lo:500,     hi:500+DW,  hinge:'lo', into:'+x' }, // 4 Bedroom 2 · W · at N
-  { orient:'NS', coord:500, lo:1070-DW, hi:1070,    hinge:'lo', into:'-z' }, // 5 Bed-2 Bathroom · S · into bath (shifted W to fit)
+  { orient:'NS', coord:500, lo:1070-DWB,hi:1070,    hinge:'lo', into:'-z' }, // 5 Bed-2 Bathroom · S · into bath (2.5 ft)
   { orient:'WE', coord:260, lo:420-DW,  hi:420,     hinge:'hi', into:'+x' }, // 6 Kitchen · W · at S (to backyard)
   { orient:'NS', coord:420, lo:0,       hi:DW,      hinge:'lo', into:'+z' }, // 7 Guest Bedroom · N · at W (to backyard)
-  { orient:'WE', coord:378.08, lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 8 Guest Bathroom · E · opens inward (shower removed, toilet on west wall)
+  { orient:'WE', coord:378.08, lo:800-DWB, hi:800,  hinge:'hi', into:'-x' }, // 8 Guest Bathroom · E · opens inward (2.5 ft)
   { orient:'WE', coord:500,    lo:800-DW, hi:800,   hinge:'hi', into:'-x' }, // 9 Hall → guest entry, directly in front of bathroom door (#8)
   { orient:'NS', coord:660,    lo:378.08, hi:500,   passage:true },          // open passage: guest bedroom <-> entry
   { orient:'NS', coord:660,    lo:14,      hi:14+DW,  hinge:'lo', into:'+z' }, // 10 Guest Closet · N · opens into guest bedroom
@@ -264,8 +264,9 @@ const WSILL = IN(28), WHEAD = IN(28)+IN(52);             // 28" sill, 52" tall
 const WIN = [
   { orient:'WE', coord:1280, lo:12,          hi:12+IN(46),      sill:WSILL, head:WHEAD, ext:'+x' }, // Master bed · E wall · 0 ft from N
   { orient:'WE', coord:1280, lo:789-IN(46),  hi:789,            sill:WSILL, head:WHEAD, ext:'+x' }, // Bedroom 2 · E wall · 0 ft from S
-  { orient:'NS', coord:420,  lo:106.68,      hi:106.68+IN(48),  sill:WSILL, head:WHEAD, ext:'-z' }, // Guest bed · N wall · 0 ft from door
-  { orient:'WE', coord:260,  lo:313.32-IN(46), hi:313.32,       sill:WSILL, head:WHEAD, ext:'-x' }, // Kitchen sink · W wall · 0 ft from door
+  { orient:'NS', coord:420,  lo:DW,          hi:DW+IN(48),      sill:WSILL, head:WHEAD, ext:'-z' }, // Guest bed · N wall · 0 ft from door
+  { orient:'WE', coord:260,  lo:420-DW-IN(46), hi:420-DW,       sill:WSILL, head:WHEAD, ext:'-x' }, // Kitchen sink · W wall · 0 ft from door
+  { orient:'NS', coord:0,    lo:680-IN(48)/2, hi:680+IN(48)/2,  sill:WSILL, head:WHEAD, ext:'-z' }, // Hall+Dining · N wall · centred
 ];
 
 // bounding box for centring
@@ -958,11 +959,11 @@ bfix(360,0.012,540,1.9,0.02,2.0,BED.rug);
   bfix(Wx+18,(UB+UT)/2,105, M(35),M((UT-UB)*100),M(170), upper);   // uppers (north of window only)
   bfix(Wx+30,UB-0.01,105, M(30),0.015,M(166), led);
   // sink centred below the window (z ~255)
-  bfix(Wx+30,0.84,255, 0.42,0.18,0.42, blk);                       // basin
-  bfix(Wx+30,0.905,255,0.50,0.02,0.50, stone);                     // rim
-  bfix(Wx+8,1.15,255, 0.05,0.50,0.07, blk);                        // waterfall faucet column
-  bfix(Wx+22,1.36,255,0.30,0.05,0.05, blk);
-  bfix(Wx+34,1.30,255,0.05,0.14,0.05, blk);
+  bfix(Wx+30,0.84,270, 0.42,0.18,0.42, blk);                       // basin
+  bfix(Wx+30,0.905,270,0.50,0.02,0.50, stone);                     // rim
+  bfix(Wx+8,1.15,270, 0.05,0.50,0.07, blk);                        // waterfall faucet column
+  bfix(Wx+22,1.36,270,0.30,0.05,0.05, blk);
+  bfix(Wx+34,1.30,270,0.05,0.14,0.05, blk);
   bfix(Wx+30,0.42,130, M(58),0.84,M(58), steel);                   // dishwasher (moved north)
   addCab(Wx+D-1,130,55,0.06,0.82,'+x','lo',steel);                 // dishwasher door (clickable)
   bcyl(Wx+28,1.00,52,0.09,0.16,steel,20); bcyl(Wx+28,1.16,52,0.07,0.16,glassT,18);  // mixie
@@ -980,7 +981,7 @@ bfix(360,0.012,540,1.9,0.02,2.0,BED.rug);
 
   // unit labels
   unitLabel('Hob',400,1.05,76); unitLabel('Chimney',400,1.78,Nz+44);
-  unitLabel('Sink',340,1.0,255); unitLabel('Dishwasher',345,0.62,130); unitLabel('Mixer',336,1.12,52);
+  unitLabel('Sink',340,1.0,270); unitLabel('Dishwasher',345,0.62,130); unitLabel('Mixer',336,1.12,52);
 
   // colliders
   colliders.push({x0:271,x1:490,z0:11,z1:71});       // north counter
@@ -1010,14 +1011,14 @@ bfix(360,0.012,540,1.9,0.02,2.0,BED.rug);
     if(back==='W') bfix(x0+9,0.54,cz, 0.18,0.56,M(d), sofa);   // backrest (west)
     if(back==='N') bfix(cx,0.54,z0+9, M(w),0.56,0.18, sofa);   // backrest (north)
   }
-  sofaSeg(514,596,300,470,'W');                                // along west wall, faces east
-  sofaSeg(596,762,388,470,'N');                                // north side, faces south (toward TV)
-  bfix(514,0.42,308,0.16,0.34,M(150),sofa);                    // west-leg far arm (south end)
-  bfix(754,0.42,429,M(150),0.34,0.16,sofa);                    // north-leg far arm (east end)
+  sofaSeg(511,596,446,632,'W');                                // west-wall leg (2 ft off the door → pillar), faces east
+  sofaSeg(511,724,446,531,'N');                                // 7 ft leg running west→east, faces south (toward TV)
+  bfix(553,0.42,628,M(85),0.34,0.12,sofa);                     // arm (south end of west leg)
+  bfix(719,0.42,488,0.12,0.34,M(85),sofa);                     // arm (east end of the 7 ft leg)
   const rugM=new THREE.MeshStandardMaterial({color:0x9a8f7e,roughness:.97});
-  bfix(640,0.012,470,2.2,0.02,2.2,rugM);                       // area rug
-  colliders.push({x0:514,x1:596,z0:300,z1:470});
-  colliders.push({x0:596,x1:762,z0:388,z1:470});
+  bfix(660,0.012,610,2.4,0.02,2.2,rugM);                       // area rug (between sofa and TV)
+  colliders.push({x0:511,x1:596,z0:446,z1:632});
+  colliders.push({x0:511,x1:724,z0:446,z1:531});
   colliders.push({x0:540,x1:740,z0:Sz-44,z1:Sz});             // media console
 })();
 
